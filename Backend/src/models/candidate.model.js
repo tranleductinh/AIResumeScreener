@@ -2,16 +2,15 @@ import mongoose from "mongoose";
 
 const candidateSchema = new mongoose.Schema(
   {
-    organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Organization",
-      required: true,
-      index: true,
-    },
     fullName: {
       type: String,
       required: true,
       trim: true,
+    },
+    normalizedFullName: {
+      type: String,
+      default: null,
+      index: true,
     },
     email: {
       type: String,
@@ -33,6 +32,10 @@ const candidateSchema = new mongoose.Schema(
       linkedin: { type: String, default: null },
       github: { type: String, default: null },
       portfolio: { type: String, default: null },
+    },
+    summary: {
+      type: String,
+      default: "",
     },
     totalYearsExperience: {
       type: Number,
@@ -81,6 +84,7 @@ const candidateSchema = new mongoose.Schema(
           name: { type: String, trim: true },
           level: { type: Number, min: 0, max: 5, default: 0 },
           years: { type: Number, min: 0, default: 0 },
+          verified: { type: Boolean, default: false },
         },
       ],
       soft: {
@@ -88,6 +92,16 @@ const candidateSchema = new mongoose.Schema(
         default: [],
       },
     },
+    languageSkills: [
+      {
+        language: { type: String, trim: true },
+        level: {
+          type: String,
+          enum: ["basic", "intermediate", "advanced", "native"],
+          default: "intermediate",
+        },
+      },
+    ],
     source: {
       type: {
         type: String,
@@ -95,6 +109,32 @@ const candidateSchema = new mongoose.Schema(
         default: "resume_upload",
       },
       sourceId: { type: String, default: null },
+      jobId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Job",
+        default: null,
+      },
+    },
+    profileStatus: {
+      type: String,
+      enum: ["pending_parse", "parsed", "needs_review", "enriched", "failed_parse"],
+      default: "pending_parse",
+    },
+    profileCompleteness: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    availability: {
+      type: String,
+      enum: ["actively_looking", "open", "not_looking", "unknown"],
+      default: "unknown",
+    },
+    expectedSalary: {
+      min: { type: Number, default: null },
+      max: { type: Number, default: null },
+      currency: { type: String, default: "USD" },
     },
     isDuplicateCandidate: {
       type: Boolean,
@@ -105,6 +145,13 @@ const candidateSchema = new mongoose.Schema(
       ref: "Candidate",
       default: null,
     },
+    tags: { type: [String], default: [] },
+    lastScreenedAt: { type: Date, default: null },
+    latestResumeFileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ResumeFile",
+      default: null,
+    },
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: { type: Date, default: null },
   },
@@ -112,7 +159,7 @@ const candidateSchema = new mongoose.Schema(
 );
 
 candidateSchema.index(
-  { organizationId: 1, email: 1 },
+  { email: 1 },
   {
     unique: true,
     partialFilterExpression: {
@@ -123,6 +170,8 @@ candidateSchema.index(
 );
 candidateSchema.index({ email: 1 }, { sparse: true });
 candidateSchema.index({ phone: 1 }, { sparse: true });
+candidateSchema.index({ profileStatus: 1, lastScreenedAt: -1 });
+candidateSchema.index({ totalYearsExperience: -1 });
 candidateSchema.index({ fullName: "text", email: "text" });
 
 const Candidate = mongoose.model("Candidate", candidateSchema);

@@ -1,7 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 
 import Layout from "@/components/layout"
-import AnalyticsReportsPage from "@/pages/AnalyticsReportsPage"
 import CandidateComparisonPage from "@/pages/CandidateComparisonPage"
 import CandidateProfilePage from "@/pages/CandidateProfilePage"
 import CandidateRankingPage from "@/pages/CandidateRankingPage"
@@ -23,7 +22,6 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobManagementPage />} />
           <Route path="/upload-screening" element={<UploadAndScreeningPage />} />
-          <Route path="/analytics" element={<AnalyticsReportsPage />} />
           <Route path="/candidates/ranking" element={<CandidateRankingPage />} />
           <Route path="/candidates/profile" element={<CandidateProfilePage />} />
           <Route path="/candidates/comparison" element={<CandidateComparisonPage />} />

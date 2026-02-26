@@ -11,7 +11,6 @@ const navItems = [
   { label: "Dashboard", to: "/dashboard" },
   { label: "Candidates", to: "/candidates/ranking" },
   { label: "Jobs", to: "/jobs" },
-  { label: "Analytics", to: "/analytics" },
   { label: "Screening", to: "/upload-screening" },
 ]
 

@@ -1,4 +1,3 @@
-import Organization from "./organization.model.js";
 import User from "./user.model.js";
 import Job from "./job.model.js";
 import Candidate from "./candidate.model.js";
@@ -9,7 +8,6 @@ import CandidateAction from "./candidate-action.model.js";
 import AuditLog from "./audit-log.model.js";
 
 export {
-  Organization,
   User,
   Job,
   Candidate,

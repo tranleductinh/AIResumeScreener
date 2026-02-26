@@ -2,16 +2,16 @@ import mongoose from "mongoose";
 
 const resumeFileSchema = new mongoose.Schema(
   {
-    organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Organization",
-      required: true,
-      index: true,
-    },
     candidateId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Candidate",
       required: true,
+      index: true,
+    },
+    jobId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Job",
+      default: null,
       index: true,
     },
     originalFileName: {
@@ -29,6 +29,16 @@ const resumeFileSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    pageCount: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    fileHash: {
+      type: String,
+      default: null,
+      index: true,
+    },
     storage: {
       provider: {
         type: String,
@@ -37,6 +47,13 @@ const resumeFileSchema = new mongoose.Schema(
       },
       pathOrKey: { type: String, required: true, trim: true },
       url: { type: String, default: null },
+      bucket: { type: String, default: null },
+    },
+    uploadStatus: {
+      type: String,
+      enum: ["queued", "uploading", "uploaded", "failed"],
+      default: "uploaded",
+      index: true,
     },
     extractedText: {
       type: String,
@@ -48,8 +65,16 @@ const resumeFileSchema = new mongoose.Schema(
     },
     parseStatus: {
       type: String,
-      enum: ["pending", "parsed", "failed"],
+      enum: ["pending", "parsing", "parsed", "failed"],
       default: "pending",
+    },
+    parseAttempts: {
+      type: Number,
+      default: 0,
+    },
+    parsedAt: {
+      type: Date,
+      default: null,
     },
     parseError: {
       type: String,
@@ -67,7 +92,10 @@ const resumeFileSchema = new mongoose.Schema(
 );
 
 resumeFileSchema.index({ candidateId: 1 });
-resumeFileSchema.index({ organizationId: 1, parseStatus: 1 });
+resumeFileSchema.index({ parseStatus: 1 });
+resumeFileSchema.index({ uploadStatus: 1, createdAt: -1 });
+resumeFileSchema.index({ candidateId: 1, createdAt: -1 });
+resumeFileSchema.index({ jobId: 1, createdAt: -1 });
 
 const ResumeFile = mongoose.model("ResumeFile", resumeFileSchema);
 
