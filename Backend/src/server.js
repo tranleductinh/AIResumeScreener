@@ -1,18 +1,27 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
-
+import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
-
+import authRoutes from "./routes/auth.route.js";
 dotenv.config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(cookieParser());
+app.use(
+  cors({
+    origin: ["http://localhost:3001"],
+    credentials: true,
+    methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/api/auth", authRoutes);
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
 async function startServer() {
   try {
