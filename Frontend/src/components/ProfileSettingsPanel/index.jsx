@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-function ProfileSettingsPanel({ displayName, email }) {
+const ProfileSettingsPanel = ({ displayName, email }) => {
   return (
     <div className="space-y-6 lg:col-span-8">
       <Card>

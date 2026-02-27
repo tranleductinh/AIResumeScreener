@@ -4,7 +4,7 @@ import AccountCard from "@/components/AccountCard";
 import ProfileSettingsPanel from "@/components/ProfileSettingsPanel";
 import AuthContext from "@/context/authContext";
 
-function ProfilePage() {
+const ProfilePage = () => {
   const { user, logOutContext } = useContext(AuthContext);
   const userInfo = user?.user || user || {};
   const displayName = userInfo?.fullName || userInfo?.name || "Recruiter";

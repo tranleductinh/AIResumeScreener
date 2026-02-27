@@ -25,7 +25,7 @@ const deltaConfig = {
   },
 }
 
-function StatCard({ label, value, delta, trend = "positive", className }) {
+const StatCard = ({ label, value, delta, trend = "positive", className }) => {
   const config = deltaConfig[trend]
   const DeltaIcon = config.icon
 

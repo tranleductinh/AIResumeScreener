@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 
-function GoogleIcon() {
+const GoogleIcon = () => {
   return (
     <svg className="size-4" viewBox="0 0 24 24" aria-hidden="true">
       <path
@@ -29,7 +29,7 @@ function GoogleIcon() {
   )
 }
 
-function RegisterPage() {
+const RegisterPage = () => {
   const navigate = useNavigate()
 
   const handleSubmit = (event) => {

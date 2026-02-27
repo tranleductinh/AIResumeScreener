@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 
-function EmptyAndLoadingStatesPage() {
+const EmptyAndLoadingStatesPage = () => {
   return (
     <div className="mx-auto max-w-5xl space-y-10">
         <Card>

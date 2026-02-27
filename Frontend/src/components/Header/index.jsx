@@ -15,7 +15,7 @@ const navItems = [
   { label: "Screening", to: "/upload-screening" },
 ]
 
-function getInitialTheme() {
+const getInitialTheme = () => {
   const storedTheme = window.localStorage.getItem("ai-resume-theme")
   if (storedTheme === "dark" || storedTheme === "light") {
     return storedTheme
@@ -24,7 +24,7 @@ function getInitialTheme() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
-function Header() {
+const Header = () => {
   const { user, logOutContext } = useContext(AuthContext)
   const [theme, setTheme] = useState(getInitialTheme)
   const [isProfileOpen, setIsProfileOpen] = useState(false)

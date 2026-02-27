@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-function getInitials(nameOrEmail) {
+const getInitials = (nameOrEmail) => {
   if (!nameOrEmail) return "HR";
   const initials = nameOrEmail
     .split(" ")
@@ -16,7 +16,7 @@ function getInitials(nameOrEmail) {
   return initials || "HR";
 }
 
-function AccountCard({ displayName, email, avatar, role, onLogout }) {
+const AccountCard = ({ displayName, email, avatar, role, onLogout }) => {
   return (
     <Card className="lg:col-span-4">
       <CardHeader>

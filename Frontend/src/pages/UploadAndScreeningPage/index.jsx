@@ -21,7 +21,7 @@ const files = [
   { name: "michael_brown_dev_ops.pdf", size: "2.4 MB", type: "pdf", progress: 100 },
 ]
 
-function UploadAndScreeningPage() {
+const UploadAndScreeningPage = () => {
   return (
     <div className="space-y-8">
         <section className="relative overflow-hidden rounded-xl bg-slate-900 p-8 text-white shadow-lg lg:p-10">
