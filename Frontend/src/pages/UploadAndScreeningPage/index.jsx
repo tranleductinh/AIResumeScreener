@@ -1,24 +1,38 @@
 import {
+  CheckCircle2,
   File,
   FileText,
+  LoaderCircle,
   PlayCircle,
   Rocket,
   Upload,
   X,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { getJobs } from "@/services/api/jobs";
 import {
   deleteResumeFile,
   getResumeFiles,
   uploadResumeFiles,
 } from "@/services/api/resume-files";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import {
+  createScreeningRun,
+  getScreeningRuns,
+  updateScreeningRunStatus,
+} from "@/services/api/screening-runs";
 
 const defaultSkills = ["React.js", "Node.js", "TypeScript", "AWS"];
 
@@ -29,15 +43,31 @@ const formatBytes = (value) => {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("vi-VN");
+};
+
+const getStatusBadgeVariant = (status) => {
+  if (status === "completed") return "success";
+  if (status === "running") return "warning";
+  if (status === "failed") return "destructive";
+  return "outline";
+};
+
 const UploadAndScreeningPage = () => {
   const fileInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [resumeFiles, setResumeFiles] = useState([]);
+  const [screeningRuns, setScreeningRuns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [screeningLoading, setScreeningLoading] = useState(false);
+  const [startingRun, setStartingRun] = useState(false);
+  const [updatingRunId, setUpdatingRunId] = useState("");
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job._id === selectedJobId) || null,
@@ -60,12 +90,28 @@ const UploadAndScreeningPage = () => {
   const fetchResumeFiles = async (jobId) => {
     try {
       setLoading(true);
-      const response = await getResumeFiles(jobId ? { jobId, page: 1, limit: 100 } : { page: 1, limit: 100 });
+      const response = await getResumeFiles(
+        jobId ? { jobId, page: 1, limit: 100 } : { page: 1, limit: 100 }
+      );
       setResumeFiles(response?.data?.data?.items || []);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Cannot fetch resume files");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchScreeningRuns = async (jobId) => {
+    try {
+      setScreeningLoading(true);
+      const response = await getScreeningRuns(
+        jobId ? { jobId, page: 1, limit: 20 } : { page: 1, limit: 20 }
+      );
+      setScreeningRuns(response?.data?.data?.items || []);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot fetch screening runs");
+    } finally {
+      setScreeningLoading(false);
     }
   };
 
@@ -75,6 +121,7 @@ const UploadAndScreeningPage = () => {
 
   useEffect(() => {
     fetchResumeFiles(selectedJobId);
+    fetchScreeningRuns(selectedJobId);
   }, [selectedJobId]);
 
   const handleSelectFiles = (event) => {
@@ -114,7 +161,7 @@ const UploadAndScreeningPage = () => {
 
       toast.success("Resume files uploaded");
       setSelectedFiles([]);
-      await fetchResumeFiles(selectedJobId);
+      await Promise.all([fetchResumeFiles(selectedJobId), fetchScreeningRuns(selectedJobId)]);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Upload failed");
     } finally {
@@ -131,6 +178,45 @@ const UploadAndScreeningPage = () => {
       await fetchResumeFiles(selectedJobId);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Delete resume file failed");
+    }
+  };
+
+  const handleStartScreeningRun = async () => {
+    if (!selectedJobId) {
+      toast.error("Please select a job first");
+      return;
+    }
+
+    if (!resumeFiles.length) {
+      toast.error("Upload resumes for this job before starting screening");
+      return;
+    }
+
+    try {
+      setStartingRun(true);
+      await createScreeningRun({
+        jobId: selectedJobId,
+        resumeFileIds: resumeFiles.map((file) => file._id),
+      });
+      toast.success("Screening run created");
+      await fetchScreeningRuns(selectedJobId);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot create screening run");
+    } finally {
+      setStartingRun(false);
+    }
+  };
+
+  const handleUpdateRunStatus = async (runId, status) => {
+    try {
+      setUpdatingRunId(runId);
+      await updateScreeningRunStatus(runId, { status });
+      toast.success("Screening run updated");
+      await fetchScreeningRuns(selectedJobId);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot update screening run");
+    } finally {
+      setUpdatingRunId("");
     }
   };
 
@@ -215,7 +301,7 @@ const UploadAndScreeningPage = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <CardDescription className="text-sm">
-                Backend stores local file metadata and marks uploaded resumes as pending parse.
+                Uploaded resumes can be grouped into screening runs before AI matching starts.
               </CardDescription>
               {uploading ? (
                 <>
@@ -226,6 +312,101 @@ const UploadAndScreeningPage = () => {
                   <Progress value={uploadProgress} />
                 </>
               ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Screening Runs</CardTitle>
+              <CardDescription>
+                Start a run from uploaded resumes and update workflow status manually for now.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-4">
+                <div className="space-y-1 text-sm">
+                  <p className="font-semibold text-foreground">Current job batch</p>
+                  <p className="text-muted-foreground">
+                    {resumeFiles.length} resume files ready for screening
+                  </p>
+                </div>
+                <Button
+                  onClick={handleStartScreeningRun}
+                  disabled={startingRun || !selectedJobId || !resumeFiles.length}>
+                  {startingRun ? "Starting..." : "Start Run"}
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Recent Runs {screeningLoading ? "(loading...)" : `(${screeningRuns.length})`}
+                </p>
+                {screeningRuns.length ? (
+                  screeningRuns.map((run) => (
+                    <div key={run._id} className="space-y-3 rounded-lg border bg-muted/20 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-foreground">
+                              {run?.jobId?.title || "Screening Run"}
+                            </p>
+                            <Badge variant={getStatusBadgeVariant(run.status)}>{run.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Candidates: {run?.totals?.total || 0} • Batch {run?.queueMeta?.currentBatch || 0}/
+                            {run?.queueMeta?.totalBatches || 0}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatDateTime(run.createdAt)}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                        <div>Processed: {run?.totals?.processed || 0}</div>
+                        <div>Failed: {run?.totals?.failed || 0}</div>
+                        <div>Run type: {run.runType}</div>
+                        <div>Provider: {run.aiProvider}</div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleUpdateRunStatus(run._id, "running")}
+                          disabled={updatingRunId === run._id || run.status !== "queued"}>
+                          <LoaderCircle className="size-4" />
+                          Running
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleUpdateRunStatus(run._id, "completed")}
+                          disabled={
+                            updatingRunId === run._id || !["queued", "running"].includes(run.status)
+                          }>
+                          <CheckCircle2 className="size-4" />
+                          Complete
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleUpdateRunStatus(run._id, "failed")}
+                          disabled={
+                            updatingRunId === run._id || !["queued", "running"].includes(run.status)
+                          }>
+                          <XCircle className="size-4" />
+                          Fail
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No screening runs have been created for this job.
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -245,7 +426,7 @@ const UploadAndScreeningPage = () => {
                   fileInputRef.current?.click();
                 }
               }}
-              className="rounded-xl border-2 border-dashed p-10 text-center cursor-pointer">
+              className="cursor-pointer rounded-xl border-2 border-dashed p-10 text-center">
               <input
                 ref={fileInputRef}
                 type="file"
