@@ -45,6 +45,19 @@ const JobFormDialog = ({
             />
           </label>
           <label className="space-y-2">
+            <span className="text-sm font-semibold">Level</span>
+            <select
+              value={form.seniorityLevel}
+              onChange={(event) => onChangeForm("seniorityLevel", event.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <option value="intern">intern</option>
+              <option value="junior">junior</option>
+              <option value="mid">mid</option>
+              <option value="senior">senior</option>
+              <option value="lead">lead</option>
+            </select>
+          </label>
+          <label className="space-y-2">
             <span className="text-sm font-semibold">Status</span>
             <select
               value={form.status}

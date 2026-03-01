@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 const initialForm = {
   title: "",
   department: "",
+  seniorityLevel: "mid",
   status: "draft",
   jdText: "",
 };
@@ -93,6 +94,7 @@ const JobManagementPage = () => {
       const response = await createJob({
         title: createForm.title.trim(),
         department: createForm.department.trim(),
+        seniorityLevel: createForm.seniorityLevel,
         status: createForm.status,
         jdText: createForm.jdText.trim(),
       });
@@ -113,6 +115,7 @@ const JobManagementPage = () => {
     setEditForm({
       title: jobData.title || "",
       department: jobData.department || "",
+      seniorityLevel: jobData.seniorityLevel || "mid",
       status: jobData.status || "draft",
       jdText: jobData.jdText || "",
     });
@@ -133,6 +136,7 @@ const JobManagementPage = () => {
       await updateJob(selectedJobId, {
         title: editForm.title.trim(),
         department: editForm.department.trim(),
+        seniorityLevel: editForm.seniorityLevel,
         status: editForm.status,
         jdText: editForm.jdText.trim(),
       });

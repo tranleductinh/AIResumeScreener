@@ -42,7 +42,7 @@ const resumeFileSchema = new mongoose.Schema(
     storage: {
       provider: {
         type: String,
-        enum: ["local", "s3"],
+        enum: ["local", "s3", "cloudinary"],
         required: true,
       },
       pathOrKey: { type: String, required: true, trim: true },

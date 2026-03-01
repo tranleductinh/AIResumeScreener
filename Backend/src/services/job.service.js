@@ -16,7 +16,7 @@ const ensureObjectId = (id) => {
 };
 
 export const createJobService = async (payload, userId) => {
-  const { title, jdText, department, status } = payload;
+  const { title, jdText, department, seniorityLevel, status } = payload;
 
   if (!title || !jdText) {
     throw buildError("title and jdText are required", 400, "VALIDATION_ERROR");
@@ -31,6 +31,7 @@ export const createJobService = async (payload, userId) => {
     title: title.trim(),
     jdText: jdText.trim(),
     department: department?.trim() || null,
+    seniorityLevel: seniorityLevel || "mid",
     status: status || "draft",
     openedAt: status === "open" ? new Date() : null,
   });
@@ -96,7 +97,7 @@ export const updateJobService = async (jobId, payload) => {
   }
 
   const previousStatus = job.status;
-  const allowedFields = ["title", "jdText", "department", "status"];
+  const allowedFields = ["title", "jdText", "department", "seniorityLevel", "status"];
   for (const key of allowedFields) {
     if (payload[key] !== undefined) {
       job[key] = payload[key];
@@ -114,7 +115,6 @@ export const updateJobService = async (jobId, payload) => {
       job.closedAt = null;
     }
   }
-
   await job.save();
   return job;
 };
