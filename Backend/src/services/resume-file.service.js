@@ -1,24 +1,18 @@
 import fs from "fs";
-import mongoose from "mongoose";
 import path from "path";
 
 import cloudinary from "../config/cloudinary.js";
 import Candidate from "../models/candidate.model.js";
-import Job from "../models/job.model.js";
 import ResumeFile from "../models/resume-file.model.js";
-
-const buildError = (message, status = 400, errorCode = "BAD_REQUEST") => {
-  const error = new Error(message);
-  error.status = status;
-  error.errorCode = errorCode;
-  return error;
-};
-
-const ensureObjectId = (id, errorCode, message) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw buildError(message, 400, errorCode);
-  }
-};
+import {
+  buildServiceError,
+  countResumeFileLinkedRecords,
+  ensureObjectId,
+  findCandidateOrThrow,
+  findJobOrThrow,
+  findResumeFileOrThrow,
+  syncCandidateLatestResumeFile,
+} from "../utils/reference-validation.js";
 
 const deriveCandidateNameFromFile = (fileName) => {
   return path
@@ -34,7 +28,7 @@ const ensureCloudinaryConfig = () => {
     !process.env.CLOUDINARY_API_KEY ||
     !process.env.CLOUDINARY_API_SECRET
   ) {
-    throw buildError(
+    throw buildServiceError(
       "Cloudinary configuration is missing. Check CLOUDINARY_* env values.",
       500,
       "CLOUDINARY_CONFIG_MISSING"
@@ -57,44 +51,25 @@ const uploadFileToCloudinary = async (file) => {
   return uploaded;
 };
 
-const ensureJob = async (jobId) => {
-  if (!jobId) return null;
-  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
-  const job = await Job.findOne({ _id: jobId, isDeleted: false });
-  if (!job) {
-    throw buildError("Job not found", 404, "JOB_NOT_FOUND");
-  }
-  return job;
-};
-
-const ensureCandidate = async (candidateId) => {
-  if (!candidateId) return null;
-  ensureObjectId(candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
-  const candidate = await Candidate.findOne({ _id: candidateId, isDeleted: false });
-  if (!candidate) {
-    throw buildError("Candidate not found", 404, "CANDIDATE_NOT_FOUND");
-  }
-  return candidate;
-};
-
 export const uploadResumeFilesService = async ({ upload, userId }) => {
   if (!userId) {
-    throw buildError("Unauthorized", 401, "UNAUTHORIZED");
+    throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   const { fields, files } = upload;
-  const job = await ensureJob(fields.jobId || null);
-  const fixedCandidate = await ensureCandidate(fields.candidateId || null);
+  const job = fields.jobId ? await findJobOrThrow(fields.jobId) : null;
+  const fixedCandidate = fields.candidateId ? await findCandidateOrThrow(fields.candidateId) : null;
 
   const createdFiles = [];
 
   for (const file of files) {
     try {
+      const candidateName = deriveCandidateNameFromFile(file.originalFileName);
       const candidate =
         fixedCandidate ||
         (await Candidate.create({
-          fullName: deriveCandidateNameFromFile(file.originalFileName),
-          normalizedFullName: deriveCandidateNameFromFile(file.originalFileName).toLowerCase(),
+          fullName: candidateName,
+          normalizedFullName: candidateName.toLowerCase(),
           profileStatus: "pending_parse",
           source: {
             type: "resume_upload",
@@ -121,6 +96,16 @@ export const uploadResumeFilesService = async ({ upload, userId }) => {
         uploadedBy: userId,
       });
 
+      await Candidate.updateOne(
+        { _id: candidate._id },
+        {
+          $set: {
+            latestResumeFileId: resumeFile._id,
+            ...(job?._id ? { "source.jobId": job._id } : {}),
+          },
+        }
+      );
+
       createdFiles.push(resumeFile);
     } finally {
       if (file.tempFilePath) {
@@ -140,12 +125,12 @@ export const getResumeFilesService = async (query) => {
   const filter = { isDeleted: false };
 
   if (query.jobId) {
-    ensureObjectId(query.jobId, "INVALID_JOB_ID", "Invalid job id");
+    await findJobOrThrow(query.jobId);
     filter.jobId = query.jobId;
   }
 
   if (query.candidateId) {
-    ensureObjectId(query.candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
+    await findCandidateOrThrow(query.candidateId);
     filter.candidateId = query.candidateId;
   }
 
@@ -182,18 +167,22 @@ export const getResumeFileByIdService = async (resumeFileId) => {
     .populate("jobId", "title");
 
   if (!resumeFile) {
-    throw buildError("Resume file not found", 404, "RESUME_FILE_NOT_FOUND");
+    throw buildServiceError("Resume file not found", 404, "RESUME_FILE_NOT_FOUND");
   }
 
   return resumeFile;
 };
 
 export const deleteResumeFileService = async (resumeFileId) => {
-  ensureObjectId(resumeFileId, "INVALID_RESUME_FILE_ID", "Invalid resume file id");
+  const resumeFile = await findResumeFileOrThrow(resumeFileId);
+  const linkedRecords = await countResumeFileLinkedRecords(resumeFile._id);
 
-  const resumeFile = await ResumeFile.findOne({ _id: resumeFileId, isDeleted: false });
-  if (!resumeFile) {
-    throw buildError("Resume file not found", 404, "RESUME_FILE_NOT_FOUND");
+  if (linkedRecords.screeningResultsCount > 0 || linkedRecords.screeningRunsCount > 0) {
+    throw buildServiceError(
+      "Cannot delete resume file while linked screening records still exist",
+      409,
+      "RESUME_FILE_RELATIONSHIP_CONFLICT"
+    );
   }
 
   if (resumeFile.storage?.provider === "cloudinary" && resumeFile.storage?.pathOrKey) {
@@ -204,7 +193,7 @@ export const deleteResumeFileService = async (resumeFileId) => {
         invalidate: true,
       });
     } catch (cloudinaryError) {
-      throw buildError(cloudinaryError.message, 500, "CLOUDINARY_DELETE_FAILED");
+      throw buildServiceError(cloudinaryError.message, 500, "CLOUDINARY_DELETE_FAILED");
     }
   }
 
@@ -212,6 +201,7 @@ export const deleteResumeFileService = async (resumeFileId) => {
   resumeFile.deletedAt = new Date();
   resumeFile.uploadStatus = "failed";
   await resumeFile.save();
+  await syncCandidateLatestResumeFile(resumeFile.candidateId);
 
   return { id: resumeFileId };
 };

@@ -1,29 +1,20 @@
-import mongoose from "mongoose";
-
 import Job from "../models/job.model.js";
-
-const buildError = (message, status = 400, errorCode = "BAD_REQUEST") => {
-  const error = new Error(message);
-  error.status = status;
-  error.errorCode = errorCode;
-  return error;
-};
-
-const ensureObjectId = (id) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw buildError("Invalid job id", 400, "INVALID_JOB_ID");
-  }
-};
+import {
+  buildServiceError,
+  countJobLinkedRecords,
+  ensureObjectId,
+  findJobOrThrow,
+} from "../utils/reference-validation.js";
 
 export const createJobService = async (payload, userId) => {
   const { title, jdText, department, seniorityLevel, status } = payload;
 
   if (!title || !jdText) {
-    throw buildError("title and jdText are required", 400, "VALIDATION_ERROR");
+    throw buildServiceError("title and jdText are required", 400, "VALIDATION_ERROR");
   }
 
   if (!userId) {
-    throw buildError("Unauthorized", 401, "UNAUTHORIZED");
+    throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   const job = await Job.create({
@@ -78,24 +69,14 @@ export const getJobsService = async (query) => {
 };
 
 export const getJobByIdService = async (jobId) => {
-  ensureObjectId(jobId);
-  const job = await Job.findOne({ _id: jobId, isDeleted: false });
-
-  if (!job) {
-    throw buildError("Job not found", 404, "JOB_NOT_FOUND");
-  }
-
-  return job;
+  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
+  return findJobOrThrow(jobId);
 };
 
 export const updateJobService = async (jobId, payload) => {
-  ensureObjectId(jobId);
+  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
 
-  const job = await Job.findOne({ _id: jobId, isDeleted: false });
-  if (!job) {
-    throw buildError("Job not found", 404, "JOB_NOT_FOUND");
-  }
-
+  const job = await findJobOrThrow(jobId);
   const previousStatus = job.status;
   const allowedFields = ["title", "jdText", "department", "seniorityLevel", "status"];
   for (const key of allowedFields) {
@@ -120,11 +101,21 @@ export const updateJobService = async (jobId, payload) => {
 };
 
 export const deleteJobService = async (jobId) => {
-  ensureObjectId(jobId);
+  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
 
-  const job = await Job.findOne({ _id: jobId, isDeleted: false });
-  if (!job) {
-    throw buildError("Job not found", 404, "JOB_NOT_FOUND");
+  const job = await findJobOrThrow(jobId);
+  const linkedRecords = await countJobLinkedRecords(job._id);
+
+  if (
+    linkedRecords.resumeFilesCount > 0 ||
+    linkedRecords.screeningResultsCount > 0 ||
+    linkedRecords.screeningRunsCount > 0
+  ) {
+    throw buildServiceError(
+      "Cannot delete job while linked resume files or screening records still exist",
+      409,
+      "JOB_RELATIONSHIP_CONFLICT"
+    );
   }
 
   job.isDeleted = true;

@@ -1,19 +1,10 @@
-import mongoose from "mongoose";
-
 import Candidate from "../models/candidate.model.js";
-
-const buildError = (message, status = 400, errorCode = "BAD_REQUEST") => {
-  const error = new Error(message);
-  error.status = status;
-  error.errorCode = errorCode;
-  return error;
-};
-
-const ensureObjectId = (id) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw buildError("Invalid candidate id", 400, "INVALID_CANDIDATE_ID");
-  }
-};
+import {
+  buildServiceError,
+  countCandidateLinkedRecords,
+  ensureObjectId,
+  findCandidateOrThrow,
+} from "../utils/reference-validation.js";
 
 const normalizeStringArray = (value) => {
   if (!value) return [];
@@ -74,7 +65,7 @@ export const createCandidateService = async (payload) => {
   const normalizedPayload = normalizeCandidatePayload(payload);
 
   if (!normalizedPayload.fullName) {
-    throw buildError("fullName is required", 400, "VALIDATION_ERROR");
+    throw buildServiceError("fullName is required", 400, "VALIDATION_ERROR");
   }
 
   try {
@@ -99,7 +90,7 @@ export const createCandidateService = async (payload) => {
     return candidate;
   } catch (err) {
     if (err?.code === 11000) {
-      throw buildError("Candidate email already exists", 409, "DUPLICATE_EMAIL");
+      throw buildServiceError("Candidate email already exists", 409, "DUPLICATE_EMAIL");
     }
     throw err;
   }
@@ -141,24 +132,14 @@ export const getCandidatesService = async (query) => {
 };
 
 export const getCandidateByIdService = async (candidateId) => {
-  ensureObjectId(candidateId);
-  const candidate = await Candidate.findOne({ _id: candidateId, isDeleted: false });
-
-  if (!candidate) {
-    throw buildError("Candidate not found", 404, "CANDIDATE_NOT_FOUND");
-  }
-
-  return candidate;
+  ensureObjectId(candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
+  return findCandidateOrThrow(candidateId);
 };
 
 export const updateCandidateService = async (candidateId, payload) => {
-  ensureObjectId(candidateId);
+  ensureObjectId(candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
 
-  const candidate = await Candidate.findOne({ _id: candidateId, isDeleted: false });
-  if (!candidate) {
-    throw buildError("Candidate not found", 404, "CANDIDATE_NOT_FOUND");
-  }
-
+  const candidate = await findCandidateOrThrow(candidateId);
   const normalizedPayload = normalizeCandidatePayload(payload);
   const assignableFields = [
     "fullName",
@@ -188,7 +169,7 @@ export const updateCandidateService = async (candidateId, payload) => {
     await candidate.save();
   } catch (err) {
     if (err?.code === 11000) {
-      throw buildError("Candidate email already exists", 409, "DUPLICATE_EMAIL");
+      throw buildServiceError("Candidate email already exists", 409, "DUPLICATE_EMAIL");
     }
     throw err;
   }
@@ -197,11 +178,21 @@ export const updateCandidateService = async (candidateId, payload) => {
 };
 
 export const deleteCandidateService = async (candidateId) => {
-  ensureObjectId(candidateId);
+  ensureObjectId(candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
 
-  const candidate = await Candidate.findOne({ _id: candidateId, isDeleted: false });
-  if (!candidate) {
-    throw buildError("Candidate not found", 404, "CANDIDATE_NOT_FOUND");
+  const candidate = await findCandidateOrThrow(candidateId);
+  const linkedRecords = await countCandidateLinkedRecords(candidate._id);
+
+  if (
+    linkedRecords.resumeFilesCount > 0 ||
+    linkedRecords.screeningResultsCount > 0 ||
+    linkedRecords.screeningRunsCount > 0
+  ) {
+    throw buildServiceError(
+      "Cannot delete candidate while linked resume files or screening records still exist",
+      409,
+      "CANDIDATE_RELATIONSHIP_CONFLICT"
+    );
   }
 
   candidate.isDeleted = true;
