@@ -6,18 +6,19 @@ dotenv.config();
 
 export const protect = async (req, res, next) => {
   try {
-    const token = req.header("Authorization").replace("Bearer ", "");
-    if (!token) {
-      return error(res, "You are not authorized", 401, "UNAUTHORIZED");
+    const authHeader = req.header("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return error(res, "You are not authorized", "UNAUTHORIZED", 401);
     }
+    const token = authHeader.replace("Bearer ", "");
     const decode = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    const user = await User.findById(decode.id).select("-password");
+    const user = await User.findById(decode.id).select("-passwordHash");
     if (!user) {
-      return error(res, "User not found", 401, "UNAUTHORIZED");
+      return error(res, "User not found", "UNAUTHORIZED", 401);
     }
     req.user = user;
     next();
   } catch (err) {
-    return error(res, "Token is not valid", 401, null);
+    return error(res, "Token is not valid", "UNAUTHORIZED", 401);
   }
 };

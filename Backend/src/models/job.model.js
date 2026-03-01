@@ -9,7 +9,6 @@ const jobSchema = new mongoose.Schema(
     },
     jobCode: {
       type: String,
-      default: null,
       trim: true,
     },
     title: {
@@ -104,7 +103,7 @@ const jobSchema = new mongoose.Schema(
 jobSchema.index({ status: 1 });
 jobSchema.index({ department: 1, status: 1 });
 jobSchema.index({ title: 1, createdAt: -1 });
-jobSchema.index({ jobCode: 1 }, { unique: true, sparse: true });
+jobSchema.index({ jobCode: 1 });
 jobSchema.index({ title: "text", jdText: "text" });
 
 const Job = mongoose.model("Job", jobSchema);
