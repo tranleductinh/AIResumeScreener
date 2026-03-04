@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       index: true,
+      unique: true,
     },
     avatar: {
       type: String,
@@ -55,16 +56,30 @@ const userSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailVerificationExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
     authType: { type: String, enum: ["local", "google"], default: "local" },
   },
   { timestamps: true }
 );
-
-
-userSchema.pre("save", async function () {
-    if (!this.isModified("password")) return;
-    this.password = await bcrypt.hash(this.password, 10);
-})
 
 const User = mongoose.model("User", userSchema);
 

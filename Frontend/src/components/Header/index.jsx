@@ -1,4 +1,4 @@
-import { Bell, Brain, LogOut, Moon, Search, Sun, User } from "lucide-react"
+import { Brain, LogOut, Moon, Search, Sun, User } from "lucide-react"
 import { useContext, useEffect, useRef, useState } from "react"
 import { Link, NavLink } from "react-router-dom"
 
@@ -106,9 +106,6 @@ const Header = () => {
             onClick={handleThemeToggle}
             aria-label="Toggle theme">
             {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </Button>
-          <Button size="icon" variant="outline">
-            <Bell className="size-4" />
           </Button>
           <div className="relative" ref={profileMenuRef}>
             <button

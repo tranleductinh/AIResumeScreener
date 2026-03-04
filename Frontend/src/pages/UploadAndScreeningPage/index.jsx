@@ -43,7 +43,8 @@ const allowedFileTypes = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 const maxUploadBytes = 10 * 1024 * 1024;
-const fallbackParseMarker = "Fallback parse was generated because file download from storage failed.";
+const fallbackParseMarker =
+  "Fallback parse was generated because file download from storage failed.";
 
 const formatBytes = (value) => {
   if (!value && value !== 0) return "0 B";
@@ -89,11 +90,14 @@ const UploadAndScreeningPage = () => {
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job._id === selectedJobId) || null,
-    [jobs, selectedJobId]
+    [jobs, selectedJobId],
   );
   const selectedRun = useMemo(
-    () => screeningRuns.find((run) => run._id === selectedRunId) || screeningRuns[0] || null,
-    [screeningRuns, selectedRunId]
+    () =>
+      screeningRuns.find((run) => run._id === selectedRunId) ||
+      screeningRuns[0] ||
+      null,
+    [screeningRuns, selectedRunId],
   );
 
   const fetchJobs = async () => {
@@ -113,7 +117,7 @@ const UploadAndScreeningPage = () => {
     try {
       setLoading(true);
       const response = await getResumeFiles(
-        jobId ? { jobId, page: 1, limit: 100 } : { page: 1, limit: 100 }
+        jobId ? { jobId, page: 1, limit: 100 } : { page: 1, limit: 100 },
       );
       setResumeFiles(response?.data?.data?.items || []);
     } catch (err) {
@@ -127,11 +131,13 @@ const UploadAndScreeningPage = () => {
     try {
       setScreeningLoading(true);
       const response = await getScreeningRuns(
-        jobId ? { jobId, page: 1, limit: 20 } : { page: 1, limit: 20 }
+        jobId ? { jobId, page: 1, limit: 20 } : { page: 1, limit: 20 },
       );
       setScreeningRuns(response?.data?.data?.items || []);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Cannot fetch screening runs");
+      toast.error(
+        err?.response?.data?.message || "Cannot fetch screening runs",
+      );
     } finally {
       setScreeningLoading(false);
     }
@@ -152,7 +158,9 @@ const UploadAndScreeningPage = () => {
       });
       setScreeningResults(response?.data?.data?.items || []);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Cannot fetch screening results");
+      toast.error(
+        err?.response?.data?.message || "Cannot fetch screening results",
+      );
     } finally {
       setResultsLoading(false);
     }
@@ -174,7 +182,10 @@ const UploadAndScreeningPage = () => {
       return;
     }
 
-    if (!selectedRunId || !screeningRuns.some((run) => run._id === selectedRunId)) {
+    if (
+      !selectedRunId ||
+      !screeningRuns.some((run) => run._id === selectedRunId)
+    ) {
       setSelectedRunId(screeningRuns[0]._id);
     }
   }, [screeningRuns, selectedRunId]);
@@ -189,7 +200,11 @@ const UploadAndScreeningPage = () => {
   }, [selectedRun?._id]);
 
   useEffect(() => {
-    if (!selectedJobId || !selectedRun?._id || !["queued", "running"].includes(selectedRun.status)) {
+    if (
+      !selectedJobId ||
+      !selectedRun?._id ||
+      !["queued", "running"].includes(selectedRun.status)
+    ) {
       return undefined;
     }
 
@@ -211,7 +226,7 @@ const UploadAndScreeningPage = () => {
     files.forEach((file) => {
       const fileKey = `${file.name}-${file.size}`;
       const hasDuplicate = [...selectedFiles, ...acceptedFiles].some(
-        (queuedFile) => `${queuedFile.name}-${queuedFile.size}` === fileKey
+        (queuedFile) => `${queuedFile.name}-${queuedFile.size}` === fileKey,
       );
 
       if (!allowedFileTypes.has(file.type)) {
@@ -241,12 +256,16 @@ const UploadAndScreeningPage = () => {
       return;
     }
 
-    setSelectedFiles((previous) => [...previous, ...acceptedFiles].slice(0, 50));
+    setSelectedFiles((previous) =>
+      [...previous, ...acceptedFiles].slice(0, 50),
+    );
     event.target.value = "";
   };
 
   const handleRemoveLocalFile = (indexToRemove) => {
-    setSelectedFiles((previous) => previous.filter((_, index) => index !== indexToRemove));
+    setSelectedFiles((previous) =>
+      previous.filter((_, index) => index !== indexToRemove),
+    );
   };
 
   const handleUpload = async () => {
@@ -274,7 +293,10 @@ const UploadAndScreeningPage = () => {
 
       toast.success("Resume files uploaded");
       setSelectedFiles([]);
-      await Promise.all([fetchResumeFiles(selectedJobId), fetchScreeningRuns(selectedJobId)]);
+      await Promise.all([
+        fetchResumeFiles(selectedJobId),
+        fetchScreeningRuns(selectedJobId),
+      ]);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Upload failed");
     } finally {
@@ -331,17 +353,25 @@ const UploadAndScreeningPage = () => {
       toast.success("Screening run queued");
       await Promise.all([
         fetchScreeningRuns(selectedJobId),
-        createdRun?._id ? fetchScreeningResults(createdRun._id) : Promise.resolve(),
+        createdRun?._id
+          ? fetchScreeningResults(createdRun._id)
+          : Promise.resolve(),
       ]);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Cannot create screening run");
+      toast.error(
+        err?.response?.data?.message || "Cannot create screening run",
+      );
     } finally {
       setStartingRun(false);
     }
   };
 
   const handleDeleteScreeningRun = async (screeningRunId) => {
-    if (!window.confirm("Delete this screening run and all of its screening results?")) {
+    if (
+      !window.confirm(
+        "Delete this screening run and all of its screening results?",
+      )
+    ) {
       return;
     }
 
@@ -356,7 +386,9 @@ const UploadAndScreeningPage = () => {
 
       await fetchScreeningRuns(selectedJobId);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Cannot delete screening run");
+      toast.error(
+        err?.response?.data?.message || "Cannot delete screening run",
+      );
     }
   };
 
@@ -369,14 +401,9 @@ const UploadAndScreeningPage = () => {
             Upload &amp; AI Screening
           </h1>
           <p className="text-slate-300">
-            Upload multiple resumes, parse them, and run AI matching against the selected job.
+            Upload multiple resumes, parse them, and run AI matching against the
+            selected job.
           </p>
-          <Button
-            variant="outline"
-            className="gap-2 border-white/30 text-white hover:bg-white/15">
-            <PlayCircle className="size-4" />
-            Watch Tutorial
-          </Button>
         </div>
       </section>
 
@@ -388,11 +415,14 @@ const UploadAndScreeningPage = () => {
             </CardHeader>
             <CardContent className="space-y-5">
               <label className="space-y-2">
-                <span className="text-sm font-semibold">Target Job Position</span>
+                <span className="text-sm font-semibold">
+                  Target Job Position
+                </span>
                 <select
                   value={selectedJobId}
                   onChange={(event) => setSelectedJobId(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
                   <option value="">No job selected</option>
                   {jobs.map((job) => (
                     <option key={job._id} value={job._id}>
@@ -413,7 +443,9 @@ const UploadAndScreeningPage = () => {
               </div>
 
               <div className="space-y-2">
-                <span className="text-sm font-semibold">Required Skill Keywords</span>
+                <span className="text-sm font-semibold">
+                  Required Skill Keywords
+                </span>
                 <div className="min-h-24 rounded-md border border-dashed border-border bg-muted/20 p-3">
                   <div className="flex flex-wrap gap-2">
                     {defaultSkills.map((skill) => (
@@ -429,7 +461,10 @@ const UploadAndScreeningPage = () => {
 
               {selectedJob ? (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                  Selected job: <span className="font-semibold text-foreground">{selectedJob.title}</span>
+                  Selected job:{" "}
+                  <span className="font-semibold text-foreground">
+                    {selectedJob.title}
+                  </span>
                 </div>
               ) : null}
             </CardContent>
@@ -437,16 +472,21 @@ const UploadAndScreeningPage = () => {
 
           <Card className="border-primary/20 bg-primary/5">
             <CardHeader>
-              <CardTitle className="text-base text-primary">Upload Status</CardTitle>
+              <CardTitle className="text-base text-primary">
+                Upload Status
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <CardDescription className="text-sm">
-                Uploaded resumes will be parsed automatically during screening if they are still pending.
+                Uploaded resumes will be parsed automatically during screening
+                if they are still pending.
               </CardDescription>
               {uploading ? (
                 <>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Uploading batch</span>
+                    <span className="text-muted-foreground">
+                      Uploading batch
+                    </span>
                     <span className="font-bold">{uploadProgress}%</span>
                   </div>
                   <Progress value={uploadProgress} />
@@ -459,41 +499,56 @@ const UploadAndScreeningPage = () => {
             <CardHeader>
               <CardTitle>Screening Runs</CardTitle>
               <CardDescription>
-                Starting a run will parse missing resumes, generate AI scores, save ranking results, and complete the batch automatically.
+                Starting a run will parse missing resumes, generate AI scores,
+                save ranking results, and complete the batch automatically.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-4">
                 <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-foreground">Current job batch</p>
+                  <p className="font-semibold text-foreground">
+                    Current job batch
+                  </p>
                   <p className="text-muted-foreground">
                     {resumeFiles.length} resume files ready for screening
                   </p>
                 </div>
                 <Button
                   onClick={handleStartScreeningRun}
-                  disabled={startingRun || !selectedJobId || !resumeFiles.length}>
+                  disabled={
+                    startingRun || !selectedJobId || !resumeFiles.length
+                  }
+                >
                   {startingRun ? "Running AI..." : "Start Run"}
                 </Button>
               </div>
 
               <div className="space-y-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  Recent Runs {screeningLoading ? "(loading...)" : `(${screeningRuns.length})`}
+                  Recent Runs{" "}
+                  {screeningLoading
+                    ? "(loading...)"
+                    : `(${screeningRuns.length})`}
                 </p>
                 {screeningRuns.length ? (
                   screeningRuns.map((run) => (
-                    <div key={run._id} className="space-y-3 rounded-lg border bg-muted/20 p-4">
+                    <div
+                      key={run._id}
+                      className="space-y-3 rounded-lg border bg-muted/20 p-4"
+                    >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-foreground">
                               {run?.jobId?.title || "Screening Run"}
                             </p>
-                            <Badge variant={getStatusBadgeVariant(run.status)}>{run.status}</Badge>
+                            <Badge variant={getStatusBadgeVariant(run.status)}>
+                              {run.status}
+                            </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Candidates: {run?.totals?.total || 0} • Batch {run?.queueMeta?.currentBatch || 0}/
+                            Candidates: {run?.totals?.total || 0} • Batch{" "}
+                            {run?.queueMeta?.currentBatch || 0}/
                             {run?.queueMeta?.totalBatches || 0}
                           </p>
                         </div>
@@ -513,22 +568,35 @@ const UploadAndScreeningPage = () => {
                         <Progress
                           value={
                             run?.totals?.total
-                              ? Math.round(((run?.totals?.processed || 0) / run.totals.total) * 100)
+                              ? Math.round(
+                                  ((run?.totals?.processed || 0) /
+                                    run.totals.total) *
+                                    100,
+                                )
                               : 0
                           }
                         />
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-xs text-muted-foreground">
-                            {run.status === "queued" && "Waiting in background queue"}
-                            {run.status === "running" && "AI is scoring candidates in the background"}
-                            {run.status === "completed" && "Results are ready to review"}
-                            {run.status === "failed" && "Run failed. Check error summary or retry"}
+                            {run.status === "queued" &&
+                              "Waiting in background queue"}
+                            {run.status === "running" &&
+                              "AI is scoring candidates in the background"}
+                            {run.status === "completed" &&
+                              "Results are ready to review"}
+                            {run.status === "failed" &&
+                              "Run failed. Check error summary or retry"}
                           </p>
                           <div className="flex items-center gap-2">
                             <Button
                               size="sm"
-                              variant={selectedRun?._id === run._id ? "default" : "outline"}
-                              onClick={() => setSelectedRunId(run._id)}>
+                              variant={
+                                selectedRun?._id === run._id
+                                  ? "default"
+                                  : "outline"
+                              }
+                              onClick={() => setSelectedRunId(run._id)}
+                            >
                               View Results
                             </Button>
                             <Button
@@ -540,7 +608,8 @@ const UploadAndScreeningPage = () => {
                                 run.status === "running"
                                   ? "Cannot delete a run while it is running"
                                   : "Delete run"
-                              }>
+                              }
+                            >
                               <Trash2 className="size-4" />
                             </Button>
                           </div>
@@ -566,7 +635,9 @@ const UploadAndScreeningPage = () => {
         <Card className="lg:col-span-7">
           <CardHeader>
             <CardTitle>Upload Resumes</CardTitle>
-            <CardDescription>Drag and drop PDF or DOCX files (up to 50 files).</CardDescription>
+            <CardDescription>
+              Drag and drop PDF or DOCX files (up to 50 files).
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div
@@ -578,7 +649,8 @@ const UploadAndScreeningPage = () => {
                   fileInputRef.current?.click();
                 }
               }}
-              className="cursor-pointer rounded-xl border-2 border-dashed p-10 text-center">
+              className="cursor-pointer rounded-xl border-2 border-dashed p-10 text-center"
+            >
               <input
                 ref={fileInputRef}
                 type="file"
@@ -590,8 +662,12 @@ const UploadAndScreeningPage = () => {
               <span className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <Upload className="size-7" />
               </span>
-              <p className="font-semibold">Drag files here or click to browse</p>
-              <p className="mt-1 text-sm text-muted-foreground">Max 50 files per batch</p>
+              <p className="font-semibold">
+                Drag files here or click to browse
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Max 50 files per batch
+              </p>
             </div>
 
             <div className="space-y-3">
@@ -602,7 +678,8 @@ const UploadAndScreeningPage = () => {
                 selectedFiles.map((file, index) => (
                   <div
                     key={`${file.name}-${index}`}
-                    className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
+                    className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3"
+                  >
                     <span className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
                       {file.type === "application/pdf" ? (
                         <File className="size-4" />
@@ -612,29 +689,43 @@ const UploadAndScreeningPage = () => {
                     </span>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold">{file.name}</p>
+                        <p className="truncate text-sm font-semibold">
+                          {file.name}
+                        </p>
                         <span className="text-xs text-muted-foreground">
                           {formatBytes(file.size)}
                         </span>
                       </div>
                       <Progress value={uploading ? uploadProgress : 0} />
                     </div>
-                    <Button size="icon" variant="ghost" onClick={() => handleRemoveLocalFile(index)}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleRemoveLocalFile(index)}
+                    >
                       <X className="size-4" />
                     </Button>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No files queued.</p>
+                <p className="text-sm text-muted-foreground">
+                  No files queued.
+                </p>
               )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/20 p-4">
               <p className="text-sm text-muted-foreground">
-                <span className="font-bold text-foreground">{selectedFiles.length} files</span>{" "}
+                <span className="font-bold text-foreground">
+                  {selectedFiles.length} files
+                </span>{" "}
                 selected for upload
               </p>
-              <Button className="gap-2" onClick={handleUpload} disabled={uploading || !selectedFiles.length}>
+              <Button
+                className="gap-2"
+                onClick={handleUpload}
+                disabled={uploading || !selectedFiles.length}
+              >
                 <Rocket className="size-4" />
                 {uploading ? "Uploading..." : "Upload Selected Files"}
               </Button>
@@ -642,72 +733,82 @@ const UploadAndScreeningPage = () => {
 
             <div className="space-y-3">
               <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                Uploaded Resume Files {loading ? "(loading...)" : `(${resumeFiles.length})`}
+                Uploaded Resume Files{" "}
+                {loading ? "(loading...)" : `(${resumeFiles.length})`}
               </p>
               {resumeFiles.length ? (
-                resumeFiles.map((file) => (
+                resumeFiles.map((file) =>
                   (() => {
-                    const isFallbackParsed = String(file.extractedText || "").includes(
-                      fallbackParseMarker
-                    );
+                    const isFallbackParsed = String(
+                      file.extractedText || "",
+                    ).includes(fallbackParseMarker);
                     return (
-                  <div
-                    key={file._id}
-                    className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
-                    <span className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      {file.mimeType === "application/pdf" ? (
-                        <File className="size-4" />
-                      ) : (
-                        <FileText className="size-4" />
-                      )}
-                    </span>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold">{file.originalFileName}</p>
-                        <span className="text-xs text-muted-foreground">
-                          {formatBytes(file.sizeBytes)}
+                      <div
+                        key={file._id}
+                        className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3"
+                      >
+                        <span className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                          {file.mimeType === "application/pdf" ? (
+                            <File className="size-4" />
+                          ) : (
+                            <FileText className="size-4" />
+                          )}
                         </span>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-semibold">
+                              {file.originalFileName}
+                            </p>
+                            <span className="text-xs text-muted-foreground">
+                              {formatBytes(file.sizeBytes)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <Badge variant="outline">{file.uploadStatus}</Badge>
+                            <Badge variant="outline">{file.parseStatus}</Badge>
+                            {file?.candidateId?.fullName ? (
+                              <span>
+                                Candidate: {file.candidateId.fullName}
+                              </span>
+                            ) : null}
+                            {file?.jobId?.title ? (
+                              <span>Job: {file.jobId.title}</span>
+                            ) : null}
+                          </div>
+                          {file?.extractedTextPreview ? (
+                            <p className="line-clamp-2 text-xs text-muted-foreground">
+                              Preview: {file.extractedTextPreview}
+                            </p>
+                          ) : null}
+                          {file?.parseError ? (
+                            <p className="rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
+                              Parse error: {file.parseError}
+                            </p>
+                          ) : null}
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleParseResumeFile(file._id)}
+                          disabled={
+                            parsingResumeId === file._id ||
+                            file.parseStatus === "parsing" ||
+                            (file.parseStatus === "parsed" && !isFallbackParsed)
+                          }
+                        >
+                          <FileSearch className="size-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleDeleteResumeFile(file._id)}
+                        >
+                          <X className="size-4" />
+                        </Button>
                       </div>
-                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline">{file.uploadStatus}</Badge>
-                        <Badge variant="outline">{file.parseStatus}</Badge>
-                        {file?.candidateId?.fullName ? (
-                          <span>Candidate: {file.candidateId.fullName}</span>
-                        ) : null}
-                        {file?.jobId?.title ? <span>Job: {file.jobId.title}</span> : null}
-                      </div>
-                      {file?.extractedTextPreview ? (
-                        <p className="line-clamp-2 text-xs text-muted-foreground">
-                          Preview: {file.extractedTextPreview}
-                        </p>
-                      ) : null}
-                      {file?.parseError ? (
-                        <p className="rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
-                          Parse error: {file.parseError}
-                        </p>
-                      ) : null}
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleParseResumeFile(file._id)}
-                      disabled={
-                        parsingResumeId === file._id ||
-                        file.parseStatus === "parsing" ||
-                        (file.parseStatus === "parsed" && !isFallbackParsed)
-                      }>
-                      <FileSearch className="size-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleDeleteResumeFile(file._id)}>
-                      <X className="size-4" />
-                    </Button>
-                  </div>
                     );
-                  })()
-                ))
+                  })(),
+                )
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No uploaded resume files for the current filter.
@@ -723,14 +824,16 @@ const UploadAndScreeningPage = () => {
           <div>
             <CardTitle>Latest Screening Results</CardTitle>
             <CardDescription>
-              Review ranked candidates from the selected screening run without leaving the upload page.
+              Review ranked candidates from the selected screening run without
+              leaving the upload page.
             </CardDescription>
           </div>
           <div className="flex w-full max-w-sm items-center gap-3">
             <select
               value={selectedRun?._id || ""}
               onChange={(event) => setSelectedRunId(event.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
               <option value="">Select screening run</option>
               {screeningRuns.map((run) => (
                 <option key={run._id} value={run._id}>
@@ -740,8 +843,11 @@ const UploadAndScreeningPage = () => {
             </select>
             <Button
               variant="outline"
-              onClick={() => selectedRun?._id && fetchScreeningResults(selectedRun._id)}
-              disabled={!selectedRun?._id || resultsLoading}>
+              onClick={() =>
+                selectedRun?._id && fetchScreeningResults(selectedRun._id)
+              }
+              disabled={!selectedRun?._id || resultsLoading}
+            >
               Refresh
             </Button>
           </div>
@@ -750,26 +856,39 @@ const UploadAndScreeningPage = () => {
           {selectedRun ? (
             <div className="grid gap-4 md:grid-cols-4">
               <div className="rounded-lg border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Status
+                </p>
                 <div className="mt-2 flex items-center gap-2">
-                  <Badge variant={getStatusBadgeVariant(selectedRun.status)}>{selectedRun.status}</Badge>
+                  <Badge variant={getStatusBadgeVariant(selectedRun.status)}>
+                    {selectedRun.status}
+                  </Badge>
                 </div>
               </div>
               <div className="rounded-lg border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Processed</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Processed
+                </p>
                 <p className="mt-2 text-2xl font-bold text-foreground">
-                  {selectedRun?.totals?.processed || 0}/{selectedRun?.totals?.total || 0}
+                  {selectedRun?.totals?.processed || 0}/
+                  {selectedRun?.totals?.total || 0}
                 </p>
               </div>
               <div className="rounded-lg border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Failed</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Failed
+                </p>
                 <p className="mt-2 text-2xl font-bold text-foreground">
                   {selectedRun?.totals?.failed || 0}
                 </p>
               </div>
               <div className="rounded-lg border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Provider</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{selectedRun.aiProvider}</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Provider
+                </p>
+                <p className="mt-2 text-lg font-semibold text-foreground">
+                  {selectedRun.aiProvider}
+                </p>
               </div>
             </div>
           ) : null}
@@ -798,51 +917,73 @@ const UploadAndScreeningPage = () => {
           {!resultsLoading && screeningResults.length ? (
             <div className="space-y-3">
               {screeningResults.map((result) => (
-                <div key={result._id} className="rounded-lg border bg-muted/20 p-4">
+                <div
+                  key={result._id}
+                  className="rounded-lg border bg-muted/20 p-4"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-base font-semibold text-foreground">
-                          #{result.rankingPosition || "-"} {result?.candidateId?.fullName || "Candidate"}
+                          #{result.rankingPosition || "-"}{" "}
+                          {result?.candidateId?.fullName || "Candidate"}
                         </p>
-                        <Badge variant={getResultBadgeVariant(result.statusBadge)}>
+                        <Badge
+                          variant={getResultBadgeVariant(result.statusBadge)}
+                        >
                           {result.statusBadge}
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {result?.candidateId?.currentTitle || "No current title"} •{" "}
-                        {result?.candidateId?.totalYearsExperience || 0} years experience
+                        {result?.candidateId?.currentTitle ||
+                          "No current title"}{" "}
+                        • {result?.candidateId?.totalYearsExperience || 0} years
+                        experience
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-3xl font-black text-foreground">{result.matchingScore}</p>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">match score</p>
+                      <p className="text-3xl font-black text-foreground">
+                        {result.matchingScore}
+                      </p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        match score
+                      </p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div className="rounded-md border bg-background/60 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Matched Skills</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Matched Skills
+                      </p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {(result.matchedSkills || []).slice(0, 6).map((skill) => (
-                          <Badge key={skill} variant="outline">
-                            {skill}
-                          </Badge>
-                        ))}
+                        {(result.matchedSkills || [])
+                          .slice(0, 6)
+                          .map((skill) => (
+                            <Badge key={skill} variant="outline">
+                              {skill}
+                            </Badge>
+                          ))}
                       </div>
                     </div>
                     <div className="rounded-md border bg-background/60 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Missing Skills</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Missing Skills
+                      </p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {(result.missingSkills || []).slice(0, 6).map((skill) => (
-                          <Badge key={skill} variant="destructive">
-                            {skill}
-                          </Badge>
-                        ))}
+                        {(result.missingSkills || [])
+                          .slice(0, 6)
+                          .map((skill) => (
+                            <Badge key={skill} variant="destructive">
+                              {skill}
+                            </Badge>
+                          ))}
                       </div>
                     </div>
                     <div className="rounded-md border bg-background/60 p-3">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Confidence</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Confidence
+                      </p>
                       <p className="mt-2 text-2xl font-bold text-foreground">
                         {Math.round((result.confidenceScore || 0) * 100)}%
                       </p>
@@ -850,8 +991,12 @@ const UploadAndScreeningPage = () => {
                   </div>
 
                   <div className="mt-4 space-y-2 text-sm">
-                    <p className="font-medium text-foreground">{result.aiSummary}</p>
-                    <p className="text-muted-foreground">{result.explanation}</p>
+                    <p className="font-medium text-foreground">
+                      {result.aiSummary}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {result.explanation}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -864,4 +1009,3 @@ const UploadAndScreeningPage = () => {
 };
 
 export default UploadAndScreeningPage;
-

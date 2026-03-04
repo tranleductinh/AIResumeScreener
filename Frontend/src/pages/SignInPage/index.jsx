@@ -1,22 +1,42 @@
 import { Bot } from "lucide-react";
-
 import { useContext, useState } from "react";
-import AuthContext from "@/context/authContext";
-import LoginCard from "@/components/LoginCard";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
+import LoginCard from "@/components/LoginCard";
+import AuthContext from "@/context/authContext";
 
 const SignInPage = () => {
-  const { loginGoogle } = useContext(AuthContext);
+  const { loginGoogle, loginWithEmail } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleGoogleLogin = async () => {
+  const handleEmailLogin = async (event) => {
+    event.preventDefault();
+    setLoading(true);
     try {
-      setLoading(true);
-      await loginGoogle();
+      await loginWithEmail({ email, password });
+      toast.success("User logged in successfully");
+      navigate("/dashboard");
     } catch (error) {
-      console.error(error);
+      if (error?.response?.data?.errorCode === "EMAIL_NOT_VERIFIED") {
+        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+      }
+      toast.error(error?.response?.data?.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      await loginGoogle();
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -39,14 +59,23 @@ const SignInPage = () => {
               Screen hundreds of resumes in minutes with AI
             </h1>
             <p className="text-base leading-relaxed text-primary-foreground/90">
-              Improve hiring speed with an intelligent screening workflow that
-              ranks candidates by skills, experience, and role fit.
+              Improve hiring speed with an intelligent screening workflow that ranks candidates by
+              skills, experience, and role fit.
             </p>
           </div>
         </aside>
 
         <div className="flex items-center justify-center p-6 sm:p-10">
-          <LoginCard handleGoogleLogin={handleGoogleLogin} loading={loading}  />
+          <LoginCard
+            email={email}
+            password={password}
+            loading={loading}
+            googleLoading={googleLoading}
+            onEmailChange={(event) => setEmail(event.target.value)}
+            onPasswordChange={(event) => setPassword(event.target.value)}
+            onSubmitEmailLogin={handleEmailLogin}
+            onSubmitGoogleLogin={handleGoogleLogin}
+          />
         </div>
       </div>
     </div>

@@ -26,9 +26,63 @@ const screeningSorts = [
 const screeningStatusBadges = ["strong_fit", "potential", "not_suitable"];
 
 export const authSchemas = {
+  register: {
+    body: {
+      fullName: [validators.requiredString("fullName", "fullName", { minLength: 2 })],
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+      password: [validators.requiredString("password", "password", { minLength: 6 })],
+    },
+  },
+  login: {
+    body: {
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+      password: [validators.requiredString("password", "password", { minLength: 6 })],
+    },
+  },
   googleLogin: {
     body: {
       idToken: [validators.requiredString("idToken", "idToken")],
+    },
+  },
+  verifyEmail: {
+    body: {
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+      token: [validators.requiredString("token", "token")],
+    },
+  },
+  resendVerification: {
+    body: {
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+    },
+  },
+  forgotPassword: {
+    body: {
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+    },
+  },
+  resetPassword: {
+    body: {
+      email: [
+        validators.requiredString("email", "email"),
+        validators.optionalEmail("email", "email"),
+      ],
+      token: [validators.requiredString("token", "token")],
+      newPassword: [validators.requiredString("newPassword", "newPassword", { minLength: 6 })],
     },
   },
 };
