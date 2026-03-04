@@ -5,6 +5,7 @@ import {
   getScreeningRunsService,
   updateScreeningRunStatusService,
 } from "../services/screening-run.service.js";
+import { getScreeningRunResultsService } from "../services/screening-result.service.js";
 
 export const createScreeningRunController = async (req, res) => {
   try {
@@ -28,6 +29,15 @@ export const getScreeningRunByIdController = async (req, res) => {
   try {
     const screeningRun = await getScreeningRunByIdService(req.params.id);
     return success(res, "Get screening run detail successfully", screeningRun, 200);
+  } catch (err) {
+    return error(res, err.message, err.errorCode, err.status);
+  }
+};
+
+export const getScreeningRunResultsController = async (req, res) => {
+  try {
+    const results = await getScreeningRunResultsService(req.params.id, req.query);
+    return success(res, "Get screening run results successfully", results, 200);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);
   }

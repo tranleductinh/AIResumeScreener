@@ -8,6 +8,7 @@ import jobRoutes from "./routes/job.route.js";
 import candidateRoutes from "./routes/candidate.route.js";
 import resumeFileRoutes from "./routes/resume-file.route.js";
 import screeningRunRoutes from "./routes/screening-run.route.js";
+import screeningResultRoutes from "./routes/screening-result.route.js";
 dotenv.config();
 
 const app = express();
@@ -28,6 +29,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/resume-files", resumeFileRoutes);
 app.use("/api/screening-runs", screeningRunRoutes);
+app.use("/api/screening-results", screeningResultRoutes);
 
 const port = process.env.PORT || 3000;
 

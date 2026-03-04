@@ -3,6 +3,7 @@ import express from "express";
 import {
   createScreeningRunController,
   getScreeningRunByIdController,
+  getScreeningRunResultsController,
   getScreeningRunsController,
   updateScreeningRunStatusController,
 } from "../controllers/screening-run.controller.js";
@@ -14,6 +15,7 @@ router.use(protect);
 
 router.post("/", createScreeningRunController);
 router.get("/", getScreeningRunsController);
+router.get("/:id/results", getScreeningRunResultsController);
 router.get("/:id", getScreeningRunByIdController);
 router.patch("/:id/status", updateScreeningRunStatusController);
 

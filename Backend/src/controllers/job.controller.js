@@ -6,6 +6,7 @@ import {
   getJobsService,
   updateJobService,
 } from "../services/job.service.js";
+import { getJobScreeningResultsService } from "../services/screening-result.service.js";
 
 export const createJobController = async (req, res) => {
   try {
@@ -29,6 +30,15 @@ export const getJobByIdController = async (req, res) => {
   try {
     const job = await getJobByIdService(req.params.id);
     return success(res, "Get job detail successfully", job, 200);
+  } catch (err) {
+    return error(res, err.message, err.errorCode, err.status);
+  }
+};
+
+export const getJobScreeningResultsController = async (req, res) => {
+  try {
+    const results = await getJobScreeningResultsService(req.params.jobId, req.query);
+    return success(res, "Get job screening results successfully", results, 200);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);
   }
