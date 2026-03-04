@@ -18,6 +18,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5173",
+  "https://ai-resume-screener-seven.vercel.app/",
 ];
 
 export const createApp = () => {
