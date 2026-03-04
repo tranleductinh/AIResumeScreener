@@ -78,6 +78,31 @@ export const getCandidateJobScreeningRelation = async ({ candidateId, jobId }) =
   return ScreeningResult.findOne({ candidateId, jobId }).sort({ createdAt: -1 });
 };
 
+export const ensureCandidateLinkedToJob = async ({ candidateId, jobId }) => {
+  ensureObjectId(candidateId, "INVALID_CANDIDATE_ID", "Invalid candidate id");
+  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
+
+  const [screeningResult, resumeFileCount, sourceLinkedCount] = await Promise.all([
+    ScreeningResult.findOne({ candidateId, jobId }).select("_id"),
+    ResumeFile.countDocuments({ candidateId, jobId, isDeleted: false }),
+    Candidate.countDocuments({
+      _id: candidateId,
+      isDeleted: false,
+      "source.jobId": jobId,
+    }),
+  ]);
+
+  if (!screeningResult && !resumeFileCount && !sourceLinkedCount) {
+    throw buildServiceError(
+      "Candidate is not linked to the selected job",
+      409,
+      "CANDIDATE_JOB_MISMATCH"
+    );
+  }
+
+  return true;
+};
+
 export const countCandidateLinkedRecords = async (candidateId) => {
   const [resumeFilesCount, screeningResultsCount, screeningRunsCount] = await Promise.all([
     ResumeFile.countDocuments({ candidateId, isDeleted: false }),

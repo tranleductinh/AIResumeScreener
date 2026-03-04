@@ -1,10 +1,13 @@
 import {
+  CheckCircle2,
   Download,
   Eye,
+  MessageSquareText,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Trophy,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -37,6 +40,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  createCandidateAction,
+  getJobCandidateActions,
+} from "@/services/api/candidate-actions";
 import { getJobById, getJobs } from "@/services/api/jobs";
 import { getJobScreeningResults } from "@/services/api/screening-results";
 
@@ -86,6 +93,11 @@ const CandidateRankingPage = () => {
   const [loading, setLoading] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedResult, setSelectedResult] = useState(null);
+  const [latestActions, setLatestActions] = useState({});
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [noteValue, setNoteValue] = useState("");
+  const [noteTargetResult, setNoteTargetResult] = useState(null);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
 
   const getErrorMessage = (err, fallback) => {
     return err?.response?.data?.message || fallback;
@@ -116,6 +128,29 @@ const CandidateRankingPage = () => {
     } catch (err) {
       toast.error(getErrorMessage(err, "Cannot fetch job detail"));
       setSelectedJob(null);
+    }
+  };
+
+  const fetchActions = async (jobId) => {
+    if (!jobId) {
+      setLatestActions({});
+      return;
+    }
+
+    try {
+      const response = await getJobCandidateActions(jobId, { page: 1, limit: 200 });
+      const items = response?.data?.data?.items || [];
+      const nextLatestActions = {};
+
+      items.forEach((action) => {
+        const candidateId = action?.candidateId?._id;
+        if (!candidateId || nextLatestActions[candidateId]) return;
+        nextLatestActions[candidateId] = action;
+      });
+
+      setLatestActions(nextLatestActions);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Cannot fetch candidate actions"));
     }
   };
 
@@ -165,6 +200,7 @@ const CandidateRankingPage = () => {
   useEffect(() => {
     fetchJobDetail(selectedJobId);
     fetchResults(selectedJobId, appliedFilters, 1);
+    fetchActions(selectedJobId);
   }, [selectedJobId, appliedFilters]);
 
   const rankingSummary = useMemo(() => {
@@ -201,6 +237,54 @@ const CandidateRankingPage = () => {
   const openProfileModal = (result) => {
     setSelectedResult(result);
     setProfileOpen(true);
+  };
+
+  const handleCreateAction = async ({ result, actionType, note = "", metadata = {} }) => {
+    if (!selectedJobId || !result?.candidateId?._id) {
+      toast.error("Missing job or candidate information");
+      return;
+    }
+
+    try {
+      setActionSubmitting(true);
+      await createCandidateAction({
+        jobId: selectedJobId,
+        candidateId: result.candidateId._id,
+        actionType,
+        note: note || undefined,
+        metadata,
+        sourceScreeningResultId: result._id,
+      });
+      toast.success("Candidate action created");
+      await fetchActions(selectedJobId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Cannot create candidate action"));
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const openNoteDialog = (result) => {
+    setNoteTargetResult(result);
+    setNoteValue("");
+    setNoteDialogOpen(true);
+  };
+
+  const submitNoteAction = async () => {
+    if (!noteTargetResult) return;
+    if (!noteValue.trim()) {
+      toast.error("Note is required");
+      return;
+    }
+
+    await handleCreateAction({
+      result: noteTargetResult,
+      actionType: "notes",
+      note: noteValue.trim(),
+    });
+    setNoteDialogOpen(false);
+    setNoteTargetResult(null);
+    setNoteValue("");
   };
 
   return (
@@ -396,6 +480,7 @@ const CandidateRankingPage = () => {
               {results.length ? (
                 results.map((result, index) => {
                   const candidate = result.candidateId;
+                  const latestAction = latestActions[candidate?._id];
                   const rankLabel =
                     result.rankingPosition ||
                     (pagination.page - 1) * pagination.limit + index + 1;
@@ -418,9 +503,14 @@ const CandidateRankingPage = () => {
                             <p className="font-semibold">
                               {candidate?.fullName || "Unknown Candidate"}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {candidate?.currentTitle || "No title"}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-xs text-muted-foreground">
+                                {candidate?.currentTitle || "No title"}
+                              </p>
+                              {latestAction ? (
+                                <Badge variant="outline">{latestAction.actionType}</Badge>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -465,6 +555,39 @@ const CandidateRankingPage = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              handleCreateAction({
+                                result,
+                                actionType: "shortlisted",
+                                note: "Shortlisted from ranking page",
+                              })
+                            }
+                            disabled={actionSubmitting}>
+                            <CheckCircle2 className="size-4 text-emerald-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              handleCreateAction({
+                                result,
+                                actionType: "rejected",
+                                note: "Rejected from ranking page",
+                              })
+                            }
+                            disabled={actionSubmitting}>
+                            <XCircle className="size-4 text-rose-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openNoteDialog(result)}
+                            disabled={actionSubmitting}>
+                            <MessageSquareText className="size-4 text-amber-600" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -615,10 +738,56 @@ const CandidateRankingPage = () => {
                   "No AI summary available yet."}
               </p>
             </div>
+            <div className="space-y-2 rounded-lg border p-4">
+              <p className="font-semibold">Latest HR Action</p>
+              {latestActions[selectedResult?.candidateId?._id] ? (
+                <div className="space-y-1">
+                  <Badge variant="outline">
+                    {latestActions[selectedResult.candidateId._id].actionType}
+                  </Badge>
+                  <p className="text-muted-foreground">
+                    {latestActions[selectedResult.candidateId._id].note || "No note"}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No HR action yet.</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Candidate Note</DialogTitle>
+            <DialogDescription>
+              Save an HR note for the selected candidate and job.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="space-y-2">
+              <span className="text-sm font-semibold">Note</span>
+              <textarea
+                value={noteValue}
+                onChange={(event) => setNoteValue(event.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Add your hiring note..."
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setNoteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={submitNoteAction} disabled={actionSubmitting}>
+              {actionSubmitting ? "Saving..." : "Save Note"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,6 +4,7 @@ import {
   createJobController,
   deleteJobController,
   getJobByIdController,
+  getJobCandidateActionsController,
   getJobScreeningResultsController,
   getJobsController,
   updateJobController,
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.post("/", createJobController);
 router.get("/", getJobsController);
+router.get("/:jobId/actions", getJobCandidateActionsController);
 router.get("/:jobId/results", getJobScreeningResultsController);
 router.get("/:id", getJobByIdController);
 router.patch("/:id", updateJobController);
