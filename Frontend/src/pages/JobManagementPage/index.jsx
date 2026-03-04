@@ -6,6 +6,7 @@ import JobDetailPanel from "@/components/JobDetailPanel";
 import JobFormDialog from "@/components/JobFormDialog";
 import JobTable from "@/components/JobTable";
 import {
+  analyzeJobJd,
   createJob,
   deleteJob,
   getJobById,
@@ -28,6 +29,7 @@ const JobManagementPage = () => {
   const [selectedJob, setSelectedJob] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [createForm, setCreateForm] = useState(initialForm);
@@ -164,6 +166,22 @@ const JobManagementPage = () => {
     }
   };
 
+  const handleAnalyzeJd = async (jobId) => {
+    if (!jobId) return;
+
+    try {
+      setAnalyzing(true);
+      await analyzeJobJd(jobId);
+      toast.success("JD analyzed successfully");
+      await fetchJobs(jobId);
+      await fetchJobDetail(jobId);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Analyze JD failed"));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const handleCreateFormChange = (field, value) => {
     setCreateForm((previous) => ({ ...previous, [field]: value }));
   };
@@ -204,6 +222,8 @@ const JobManagementPage = () => {
           selectedJob={selectedJob}
           onOpenEdit={openEditModal}
           onDeleteJob={handleDeleteJob}
+          onAnalyzeJd={handleAnalyzeJd}
+          analyzing={analyzing}
         />
       </div>
 

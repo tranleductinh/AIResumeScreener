@@ -1,11 +1,17 @@
-import { Lightbulb, SquarePen } from "lucide-react";
+import { Brain, Lightbulb, SquarePen } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
-const JobDetailPanel = ({ selectedJob, onOpenEdit, onDeleteJob }) => {
+const JobDetailPanel = ({
+  selectedJob,
+  onOpenEdit,
+  onDeleteJob,
+  onAnalyzeJd,
+  analyzing,
+}) => {
   return (
     <div className="space-y-6 lg:col-span-4">
       <Card>
@@ -38,6 +44,14 @@ const JobDetailPanel = ({ selectedJob, onOpenEdit, onDeleteJob }) => {
               </div>
               <div>
                 <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Role Summary
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedJob?.jdParsed?.roleSummary || "No parsed summary yet"}
+                </p>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   Skill Requirements
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -51,6 +65,19 @@ const JobDetailPanel = ({ selectedJob, onOpenEdit, onDeleteJob }) => {
                   ) : null}
                 </div>
               </div>
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Nice To Have
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(selectedJob?.jdParsed?.niceToHaveSkills || []).slice(0, 6).map((skill) => (
+                    <Badge key={skill}>{skill}</Badge>
+                  ))}
+                  {!selectedJob?.jdParsed?.niceToHaveSkills?.length ? (
+                    <Badge variant="outline">No preferred skills parsed yet</Badge>
+                  ) : null}
+                </div>
+              </div>
 
               <div className="space-y-3 border-t pt-4">
                 <div className="flex items-center justify-between text-sm">
@@ -61,6 +88,11 @@ const JobDetailPanel = ({ selectedJob, onOpenEdit, onDeleteJob }) => {
                 </div>
                 <Progress value={selectedJob?.screeningConfig?.autoRejectBelowScore || 0} />
               </div>
+
+              <Button className="w-full gap-2" onClick={() => onAnalyzeJd(selectedJob._id)} disabled={analyzing}>
+                <Brain className="size-4" />
+                {analyzing ? "Analyzing JD..." : "Analyze JD"}
+              </Button>
 
               <Button
                 variant="destructive"

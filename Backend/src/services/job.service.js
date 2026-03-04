@@ -1,4 +1,5 @@
 import Job from "../models/job.model.js";
+import { analyzeJobDescriptionService } from "./jd-analysis.service.js";
 import {
   buildServiceError,
   countJobLinkedRecords,
@@ -98,6 +99,32 @@ export const updateJobService = async (jobId, payload) => {
   }
   await job.save();
   return job;
+};
+
+export const analyzeJobJdService = async (jobId) => {
+  ensureObjectId(jobId, "INVALID_JOB_ID", "Invalid job id");
+
+  const job = await findJobOrThrow(jobId);
+  if (!job.jdText?.trim()) {
+    throw buildServiceError("jdText is required for analysis", 400, "VALIDATION_ERROR");
+  }
+
+  const analysis = analyzeJobDescriptionService({
+    title: job.title,
+    jdText: job.jdText,
+  });
+
+  job.jdParsed = analysis.jdParsed;
+  job.screeningConfig = {
+    ...job.screeningConfig?.toObject?.(),
+    ...analysis.screeningConfig,
+  };
+  await job.save();
+
+  return {
+    job,
+    analysisMeta: analysis.analysisMeta,
+  };
 };
 
 export const deleteJobService = async (jobId) => {

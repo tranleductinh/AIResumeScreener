@@ -12,6 +12,10 @@ export const createJob = async (payload) => {
   return api.post("/jobs", payload);
 };
 
+export const analyzeJobJd = async (jobId) => {
+  return api.post(`/jobs/${jobId}/analyze-jd`);
+};
+
 export const updateJob = async (jobId, payload) => {
   return api.patch(`/jobs/${jobId}`, payload);
 };

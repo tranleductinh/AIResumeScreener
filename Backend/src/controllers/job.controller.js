@@ -1,5 +1,6 @@
 import { error, success } from "../utils/response.js";
 import {
+  analyzeJobJdService,
   createJobService,
   deleteJobService,
   getJobByIdService,
@@ -49,6 +50,15 @@ export const getJobCandidateActionsController = async (req, res) => {
   try {
     const actions = await getJobCandidateActionsService(req.params.jobId, req.query);
     return success(res, "Get candidate actions successfully", actions, 200);
+  } catch (err) {
+    return error(res, err.message, err.errorCode, err.status);
+  }
+};
+
+export const analyzeJobJdController = async (req, res) => {
+  try {
+    const analysis = await analyzeJobJdService(req.params.id);
+    return success(res, "Analyze job description successfully", analysis, 200);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);
   }

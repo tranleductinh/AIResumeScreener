@@ -1,6 +1,7 @@
 import express from "express";
 
 import {
+  analyzeJobJdController,
   createJobController,
   deleteJobController,
   getJobByIdController,
@@ -16,6 +17,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post("/", createJobController);
+router.post("/:id/analyze-jd", analyzeJobJdController);
 router.get("/", getJobsController);
 router.get("/:jobId/actions", getJobCandidateActionsController);
 router.get("/:jobId/results", getJobScreeningResultsController);
