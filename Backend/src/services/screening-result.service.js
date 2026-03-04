@@ -11,6 +11,16 @@ import {
 
 const allowedStatusBadges = ["strong_fit", "potential", "not_suitable"];
 const allowedRecommendations = ["must_interview", "interview", "hold", "reject"];
+const allowedSorts = [
+  "ranking_asc",
+  "ranking_desc",
+  "score_desc",
+  "score_asc",
+  "experience_desc",
+  "experience_asc",
+  "newest",
+  "oldest",
+];
 
 const normalizeStringArray = (value) => {
   if (!value) return [];
@@ -27,7 +37,11 @@ const normalizeStringArray = (value) => {
 const normalizeScore = (value, fieldName) => {
   const score = Number(value);
   if (Number.isNaN(score) || score < 0 || score > 100) {
-    throw buildServiceError(`${fieldName} must be a number between 0 and 100`, 400, "VALIDATION_ERROR");
+    throw buildServiceError(
+      `${fieldName} must be a number between 0 and 100`,
+      400,
+      "VALIDATION_ERROR"
+    );
   }
   return score;
 };
@@ -36,7 +50,11 @@ const normalizeConfidenceScore = (value) => {
   if (value === undefined || value === null || value === "") return 0.7;
   const score = Number(value);
   if (Number.isNaN(score) || score < 0 || score > 1) {
-    throw buildServiceError("confidenceScore must be a number between 0 and 1", 400, "VALIDATION_ERROR");
+    throw buildServiceError(
+      "confidenceScore must be a number between 0 and 1",
+      400,
+      "VALIDATION_ERROR"
+    );
   }
   return score;
 };
@@ -48,23 +66,224 @@ const getDefaultRecommendation = (statusBadge) => {
 };
 
 const findScreeningRunOrThrow = async (screeningRunId) => {
-  ensureObjectId(screeningRunId, "INVALID_SCREENING_RUN_ID", "Invalid screening run id");
+  ensureObjectId(
+    screeningRunId,
+    "INVALID_SCREENING_RUN_ID",
+    "Invalid screening run id"
+  );
 
   const screeningRun = await ScreeningRun.findById(screeningRunId);
   if (!screeningRun) {
-    throw buildServiceError("Screening run not found", 404, "SCREENING_RUN_NOT_FOUND");
+    throw buildServiceError(
+      "Screening run not found",
+      404,
+      "SCREENING_RUN_NOT_FOUND"
+    );
   }
 
   return screeningRun;
 };
 
+const populateResultQuery = (query) => {
+  return query
+    .populate(
+      "candidateId",
+      "fullName email currentTitle totalYearsExperience location summary skills"
+    )
+    .populate("resumeFileId", "originalFileName uploadStatus parseStatus")
+    .populate("jobId", "title seniorityLevel")
+    .populate("screeningRunId", "status createdAt");
+};
+
+const buildPagination = ({ page, limit, total }) => {
+  return {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit) || 1,
+  };
+};
+
+const resolveCandidateIdsByExperience = async (experienceMin) => {
+  if (experienceMin === undefined || experienceMin === null || experienceMin === "") {
+    return null;
+  }
+
+  const minYears = Number(experienceMin);
+  if (Number.isNaN(minYears) || minYears < 0) {
+    throw buildServiceError(
+      "experienceMin must be a non-negative number",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+
+  const candidates = await Candidate.find({
+    isDeleted: false,
+    totalYearsExperience: { $gte: minYears },
+  }).select("_id");
+
+  return candidates.map((candidate) => candidate._id);
+};
+
+const buildBaseFilter = async (scope = {}, query = {}) => {
+  const filter = { ...scope };
+
+  if (query.latestOnly !== "false" && !scope.screeningRunId) {
+    filter.isLatestForJobCandidate = true;
+  }
+
+  if (query.screeningRunId) {
+    const screeningRun = await findScreeningRunOrThrow(query.screeningRunId);
+    if (scope.jobId && String(screeningRun.jobId) !== String(scope.jobId)) {
+      throw buildServiceError(
+        "screeningRunId must belong to the same job",
+        409,
+        "SCREENING_RESULT_JOB_MISMATCH"
+      );
+    }
+    filter.screeningRunId = screeningRun._id;
+  }
+
+  if (query.scoreMin !== undefined && query.scoreMin !== "") {
+    filter.matchingScore = {
+      ...(filter.matchingScore || {}),
+      $gte: normalizeScore(query.scoreMin, "scoreMin"),
+    };
+  }
+
+  if (query.scoreMax !== undefined && query.scoreMax !== "") {
+    filter.matchingScore = {
+      ...(filter.matchingScore || {}),
+      $lte: normalizeScore(query.scoreMax, "scoreMax"),
+    };
+  }
+
+  if (
+    filter.matchingScore?.$gte !== undefined &&
+    filter.matchingScore?.$lte !== undefined &&
+    filter.matchingScore.$gte > filter.matchingScore.$lte
+  ) {
+    throw buildServiceError(
+      "scoreMin cannot be greater than scoreMax",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+
+  if (query.status) {
+    if (!allowedStatusBadges.includes(query.status)) {
+      throw buildServiceError("status is invalid", 400, "VALIDATION_ERROR");
+    }
+    filter.statusBadge = query.status;
+  }
+
+  const skills = normalizeStringArray(query.skills);
+  if (skills.length) {
+    filter.matchedSkills = { $all: skills };
+  }
+
+  const candidateIdsByExperience = await resolveCandidateIdsByExperience(
+    query.experienceMin
+  );
+  if (candidateIdsByExperience) {
+    filter.candidateId = { $in: candidateIdsByExperience };
+  }
+
+  return filter;
+};
+
+const resolveSort = (sort) => {
+  const sortValue = sort || "ranking_asc";
+  if (!allowedSorts.includes(sortValue)) {
+    throw buildServiceError("sort is invalid", 400, "VALIDATION_ERROR");
+  }
+
+  if (sortValue === "ranking_desc") {
+    return { rankingPosition: -1, matchingScore: -1, createdAt: -1 };
+  }
+  if (sortValue === "score_desc") {
+    return { matchingScore: -1, rankingPosition: 1, createdAt: -1 };
+  }
+  if (sortValue === "score_asc") {
+    return { matchingScore: 1, rankingPosition: 1, createdAt: -1 };
+  }
+  if (sortValue === "newest") {
+    return { createdAt: -1 };
+  }
+  if (sortValue === "oldest") {
+    return { createdAt: 1 };
+  }
+
+  return { rankingPosition: 1, matchingScore: -1, createdAt: -1 };
+};
+
+const sortResultsInMemory = (items, sort) => {
+  if (sort === "experience_desc") {
+    return [...items].sort((a, b) => {
+      return (
+        (b?.candidateId?.totalYearsExperience || 0) -
+        (a?.candidateId?.totalYearsExperience || 0)
+      );
+    });
+  }
+
+  if (sort === "experience_asc") {
+    return [...items].sort((a, b) => {
+      return (
+        (a?.candidateId?.totalYearsExperience || 0) -
+        (b?.candidateId?.totalYearsExperience || 0)
+      );
+    });
+  }
+
+  return items;
+};
+
+const executeResultQuery = async ({ filter, query = {} }) => {
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+  const skip = (page - 1) * limit;
+  const sort = query.sort || "ranking_asc";
+
+  if (sort === "experience_desc" || sort === "experience_asc") {
+    const items = await populateResultQuery(ScreeningResult.find(filter));
+    const sortedItems = sortResultsInMemory(items, sort);
+    const paginatedItems = sortedItems.slice(skip, skip + limit);
+
+    return {
+      items: paginatedItems,
+      pagination: buildPagination({ page, limit, total: sortedItems.length }),
+    };
+  }
+
+  const [items, total] = await Promise.all([
+    populateResultQuery(ScreeningResult.find(filter))
+      .sort(resolveSort(sort))
+      .skip(skip)
+      .limit(limit),
+    ScreeningResult.countDocuments(filter),
+  ]);
+
+  return {
+    items,
+    pagination: buildPagination({ page, limit, total }),
+  };
+};
+
 const buildResultPayload = async ({ result, screeningRun, userId }) => {
   if (!result?.candidateId) {
-    throw buildServiceError("candidateId is required for each screening result", 400, "VALIDATION_ERROR");
+    throw buildServiceError(
+      "candidateId is required for each screening result",
+      400,
+      "VALIDATION_ERROR"
+    );
   }
 
   const candidate = await findCandidateOrThrow(result.candidateId);
-  const runCandidateIds = new Set((screeningRun.input?.candidateIds || []).map((item) => String(item)));
+  const runCandidateIds = new Set(
+    (screeningRun.input?.candidateIds || []).map((item) => String(item))
+  );
   if (runCandidateIds.size && !runCandidateIds.has(String(candidate._id))) {
     throw buildServiceError(
       "candidateId must belong to the selected screening run",
@@ -91,7 +310,9 @@ const buildResultPayload = async ({ result, screeningRun, userId }) => {
       );
     }
 
-    const runResumeIds = new Set((screeningRun.input?.resumeFileIds || []).map((item) => String(item)));
+    const runResumeIds = new Set(
+      (screeningRun.input?.resumeFileIds || []).map((item) => String(item))
+    );
     if (runResumeIds.size && !runResumeIds.has(String(resumeFile._id))) {
       throw buildServiceError(
         "resumeFileId must belong to the selected screening run",
@@ -107,7 +328,8 @@ const buildResultPayload = async ({ result, screeningRun, userId }) => {
     throw buildServiceError("statusBadge is invalid", 400, "VALIDATION_ERROR");
   }
 
-  const recommendation = result.recommendation || getDefaultRecommendation(result.statusBadge);
+  const recommendation =
+    result.recommendation || getDefaultRecommendation(result.statusBadge);
   if (!allowedRecommendations.includes(recommendation)) {
     throw buildServiceError("recommendation is invalid", 400, "VALIDATION_ERROR");
   }
@@ -119,15 +341,26 @@ const buildResultPayload = async ({ result, screeningRun, userId }) => {
     resumeFileId,
     matchingScore: normalizeScore(result.matchingScore, "matchingScore"),
     rankingPosition:
-      result.rankingPosition === undefined || result.rankingPosition === null || result.rankingPosition === ""
+      result.rankingPosition === undefined ||
+      result.rankingPosition === null ||
+      result.rankingPosition === ""
         ? null
         : Math.max(Number(result.rankingPosition) || 1, 1),
     scoreBreakdown: {
-      requiredSkills: normalizeScore(result.scoreBreakdown?.requiredSkills ?? 0, "requiredSkills"),
-      optionalSkills: normalizeScore(result.scoreBreakdown?.optionalSkills ?? 0, "optionalSkills"),
+      requiredSkills: normalizeScore(
+        result.scoreBreakdown?.requiredSkills ?? 0,
+        "requiredSkills"
+      ),
+      optionalSkills: normalizeScore(
+        result.scoreBreakdown?.optionalSkills ?? 0,
+        "optionalSkills"
+      ),
       experience: normalizeScore(result.scoreBreakdown?.experience ?? 0, "experience"),
       education: normalizeScore(result.scoreBreakdown?.education ?? 0, "education"),
-      keywordContext: normalizeScore(result.scoreBreakdown?.keywordContext ?? 0, "keywordContext"),
+      keywordContext: normalizeScore(
+        result.scoreBreakdown?.keywordContext ?? 0,
+        "keywordContext"
+      ),
     },
     fitScores: {
       technical: normalizeScore(result.fitScores?.technical ?? 0, "technical"),
@@ -148,22 +381,15 @@ const buildResultPayload = async ({ result, screeningRun, userId }) => {
       reviewedBy: result.hrReview?.reviewedBy || userId || null,
       reviewedAt: result.hrReview?.reviewedAt || null,
       overrideStatusBadge: result.hrReview?.overrideStatusBadge || null,
-      overrideNote: result.hrReview?.overrideNote ? String(result.hrReview.overrideNote).trim() : null,
+      overrideNote: result.hrReview?.overrideNote
+        ? String(result.hrReview.overrideNote).trim()
+        : null,
     },
     isLatestForJobCandidate: true,
     flags: {
       needsReview: Boolean(result.flags?.needsReview),
       possibleHallucination: Boolean(result.flags?.possibleHallucination),
     },
-  };
-};
-
-const buildPagination = ({ page, limit, total }) => {
-  return {
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit) || 1,
   };
 };
 
@@ -177,7 +403,11 @@ export const createScreeningResultsBulkService = async (payload, userId) => {
   }
 
   if (!Array.isArray(payload.results) || !payload.results.length) {
-    throw buildServiceError("results must be a non-empty array", 400, "VALIDATION_ERROR");
+    throw buildServiceError(
+      "results must be a non-empty array",
+      400,
+      "VALIDATION_ERROR"
+    );
   }
 
   const screeningRun = await findScreeningRunOrThrow(payload.screeningRunId);
@@ -229,7 +459,9 @@ export const createScreeningResultsBulkService = async (payload, userId) => {
     }
   );
 
-  const processedCount = await ScreeningResult.countDocuments({ screeningRunId: screeningRun._id });
+  const processedCount = await ScreeningResult.countDocuments({
+    screeningRunId: screeningRun._id,
+  });
   screeningRun.totals.processed = processedCount;
   if (screeningRun.status === "queued" && processedCount > 0) {
     screeningRun.status = "running";
@@ -237,78 +469,25 @@ export const createScreeningResultsBulkService = async (payload, userId) => {
   }
   await screeningRun.save();
 
-  const items = await ScreeningResult.find({ screeningRunId: screeningRun._id })
-    .populate("candidateId", "fullName email currentTitle totalYearsExperience")
-    .populate("resumeFileId", "originalFileName uploadStatus parseStatus")
-    .populate("jobId", "title seniorityLevel")
-    .populate("screeningRunId", "status createdAt")
-    .sort({ rankingPosition: 1, matchingScore: -1, createdAt: -1 });
+  const items = await populateResultQuery(
+    ScreeningResult.find({ screeningRunId: screeningRun._id })
+  ).sort({
+    rankingPosition: 1,
+    matchingScore: -1,
+    createdAt: -1,
+  });
 
   return items;
 };
 
 export const getJobScreeningResultsService = async (jobId, query = {}) => {
   await findJobOrThrow(jobId);
-
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
-
-  const filter = { jobId };
-  if (query.latestOnly !== "false") {
-    filter.isLatestForJobCandidate = true;
-  }
-  if (query.screeningRunId) {
-    const screeningRun = await findScreeningRunOrThrow(query.screeningRunId);
-    if (String(screeningRun.jobId) !== String(jobId)) {
-      throw buildServiceError(
-        "screeningRunId must belong to the same job",
-        409,
-        "SCREENING_RESULT_JOB_MISMATCH"
-      );
-    }
-    filter.screeningRunId = query.screeningRunId;
-  }
-
-  const [items, total] = await Promise.all([
-    ScreeningResult.find(filter)
-      .populate("candidateId", "fullName email currentTitle totalYearsExperience")
-      .populate("resumeFileId", "originalFileName uploadStatus parseStatus")
-      .populate("screeningRunId", "status createdAt")
-      .sort({ rankingPosition: 1, matchingScore: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(limit),
-    ScreeningResult.countDocuments(filter),
-  ]);
-
-  return {
-    items,
-    pagination: buildPagination({ page, limit, total }),
-  };
+  const filter = await buildBaseFilter({ jobId }, query);
+  return executeResultQuery({ filter, query });
 };
 
 export const getScreeningRunResultsService = async (screeningRunId, query = {}) => {
   await findScreeningRunOrThrow(screeningRunId);
-
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
-
-  const filter = { screeningRunId };
-
-  const [items, total] = await Promise.all([
-    ScreeningResult.find(filter)
-      .populate("candidateId", "fullName email currentTitle totalYearsExperience")
-      .populate("resumeFileId", "originalFileName uploadStatus parseStatus")
-      .populate("jobId", "title seniorityLevel")
-      .sort({ rankingPosition: 1, matchingScore: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(limit),
-    ScreeningResult.countDocuments(filter),
-  ]);
-
-  return {
-    items,
-    pagination: buildPagination({ page, limit, total }),
-  };
+  const filter = await buildBaseFilter({ screeningRunId }, query);
+  return executeResultQuery({ filter, query });
 };
