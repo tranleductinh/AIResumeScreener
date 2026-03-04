@@ -168,7 +168,6 @@ candidateSchema.index(
     },
   }
 );
-candidateSchema.index({ email: 1 }, { sparse: true });
 candidateSchema.index({ phone: 1 }, { sparse: true });
 candidateSchema.index({ profileStatus: 1, lastScreenedAt: -1 });
 candidateSchema.index({ totalYearsExperience: -1 });

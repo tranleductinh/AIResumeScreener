@@ -56,8 +56,8 @@ const screeningRunSchema = new mongoose.Schema(
     },
     aiProvider: {
       type: String,
-      enum: ["gemini", "openai", "other"],
-      default: "openai",
+      enum: ["rule_based", "gemini", "openai", "other"],
+      default: "rule_based",
     },
     modelName: { type: String, default: null },
     promptVersion: { type: String, default: null },

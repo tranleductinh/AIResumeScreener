@@ -3,6 +3,7 @@ import CandidateAction from "../models/candidate-action.model.js";
 import Job from "../models/job.model.js";
 import ResumeFile from "../models/resume-file.model.js";
 import ScreeningResult from "../models/screening-result.model.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 
 const minutesSavedPerResume = 5;
 
@@ -138,9 +139,7 @@ export const getDashboardSummaryService = async () => {
 };
 
 export const getDashboardRecentActivityService = async (query = {}) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 50);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query, { defaultLimit: 10, maxLimit: 50 });
 
   const [items, total] = await Promise.all([
     AuditLog.find({})
@@ -151,7 +150,7 @@ export const getDashboardRecentActivityService = async (query = {}) => {
     AuditLog.countDocuments({}),
   ]);
 
-  return {
+  return buildPaginationResult({
     items: items.map((log) => ({
       _id: log._id,
       action: log.action,
@@ -172,11 +171,8 @@ export const getDashboardRecentActivityService = async (query = {}) => {
       createdAt: log.createdAt,
       ...mapActivityVisual(log),
     })),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+    page,
+    limit,
+    total,
+  });
 };

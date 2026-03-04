@@ -1,5 +1,6 @@
 import Job from "../models/job.model.js";
 import { analyzeJobDescriptionService } from "./jd-analysis.service.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 import {
   buildServiceError,
   countJobLinkedRecords,
@@ -32,9 +33,7 @@ export const createJobService = async (payload, userId) => {
 };
 
 export const getJobsService = async (query) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
 
   const filter = { isDeleted: false };
 
@@ -58,15 +57,7 @@ export const getJobsService = async (query) => {
     Job.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };
 
 export const getJobByIdService = async (jobId) => {

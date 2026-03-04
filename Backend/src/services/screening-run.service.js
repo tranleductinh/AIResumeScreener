@@ -1,7 +1,18 @@
+import Job from "../models/job.model.js";
+import Candidate from "../models/candidate.model.js";
 import ScreeningResult from "../models/screening-result.model.js";
 import ScreeningRun from "../models/screening-run.model.js";
 import ResumeFile from "../models/resume-file.model.js";
 import { logAuditEventService } from "./audit-log.service.js";
+import { parseResumeFileService } from "./resume-file.service.js";
+import {
+  createScreeningResultsBulkService,
+} from "./screening-result.service.js";
+import {
+  generateScreeningResultService,
+  resolveScreeningRunAiProvider,
+} from "./resume-matching.service.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 import {
   buildServiceError,
   ensureObjectId,
@@ -16,6 +27,10 @@ const allowedTransitions = {
   completed: [],
   failed: [],
 };
+
+const screeningQueue = [];
+const queuedRunIds = new Set();
+let isProcessingQueue = false;
 
 const normalizeStringArray = (value) => {
   if (!value) return [];
@@ -90,7 +105,7 @@ const getResumeFilesForRun = async ({ jobId, resumeFileIds }) => {
     const resumeFiles = await ResumeFile.find({
       _id: { $in: resumeFileIds },
       isDeleted: false,
-    }).select("_id candidateId jobId");
+    }).select("_id candidateId jobId parseStatus createdAt");
 
     if (resumeFiles.length !== resumeFileIds.length) {
       throw buildServiceError("One or more resume files were not found", 404, "RESUME_FILE_NOT_FOUND");
@@ -112,7 +127,7 @@ const getResumeFilesForRun = async ({ jobId, resumeFileIds }) => {
   return ResumeFile.find({
     jobId,
     isDeleted: false,
-  }).select("_id candidateId jobId");
+  }).select("_id candidateId jobId parseStatus createdAt");
 };
 
 const validateCandidateIdsForJob = async ({ candidateIds, jobId, resumeFiles }) => {
@@ -151,6 +166,320 @@ const validateCandidateIdsForJob = async ({ candidateIds, jobId, resumeFiles }) 
   }
 
   return candidateIds;
+};
+
+const groupResumeFilesByCandidate = (resumeFiles) => {
+  return resumeFiles.reduce((accumulator, resumeFile) => {
+    const candidateId = String(resumeFile.candidateId || "");
+    if (!candidateId) return accumulator;
+
+    if (!accumulator.has(candidateId)) {
+      accumulator.set(candidateId, []);
+    }
+
+    accumulator.get(candidateId).push(resumeFile);
+    return accumulator;
+  }, new Map());
+};
+
+const selectBestResumeFile = (resumeFiles = []) => {
+  if (!resumeFiles.length) return null;
+
+  return [...resumeFiles].sort((left, right) => {
+    const parseRank = (resumeFile) => (resumeFile.parseStatus === "parsed" ? 1 : 0);
+    if (parseRank(right) !== parseRank(left)) {
+      return parseRank(right) - parseRank(left);
+    }
+
+    return new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime();
+  })[0];
+};
+
+const refreshJobStats = async (jobId) => {
+  const [screenedCount, shortlistedCount, rejectedCount] = await Promise.all([
+    ScreeningResult.countDocuments({ jobId, isLatestForJobCandidate: true }),
+    ScreeningResult.countDocuments({
+      jobId,
+      isLatestForJobCandidate: true,
+      recommendation: "must_interview",
+    }),
+    ScreeningResult.countDocuments({
+      jobId,
+      isLatestForJobCandidate: true,
+      recommendation: "reject",
+    }),
+  ]);
+
+  await Job.updateOne(
+    { _id: jobId },
+    {
+      $set: {
+        "stats.screenedCount": screenedCount,
+        "stats.shortlistedCount": shortlistedCount,
+        "stats.rejectedCount": rejectedCount,
+      },
+    }
+  );
+};
+
+const compactErrorMessage = (value) => {
+  return String(value || "Unknown error").replace(/\s+/g, " ").trim().slice(0, 140);
+};
+
+const removeQueuedScreeningRun = (screeningRunId) => {
+  const normalizedRunId = String(screeningRunId);
+  const queueIndex = screeningQueue.findIndex(
+    (queuedItem) => String(queuedItem.screeningRunId) === normalizedRunId
+  );
+
+  if (queueIndex >= 0) {
+    screeningQueue.splice(queueIndex, 1);
+  }
+
+  queuedRunIds.delete(normalizedRunId);
+};
+
+const syncLatestResultsForCandidates = async ({ jobId, candidateIds = [] }) => {
+  if (!candidateIds.length) {
+    return;
+  }
+
+  const uniqueCandidateIds = [...new Set(candidateIds.map((candidateId) => String(candidateId)))];
+
+  await ScreeningResult.updateMany(
+    {
+      jobId,
+      candidateId: { $in: uniqueCandidateIds },
+    },
+    {
+      $set: {
+        isLatestForJobCandidate: false,
+      },
+    }
+  );
+
+  for (const candidateId of uniqueCandidateIds) {
+    const latestResult = await ScreeningResult.findOne({
+      jobId,
+      candidateId,
+    }).sort({ createdAt: -1, matchingScore: -1 });
+
+    if (latestResult) {
+      latestResult.isLatestForJobCandidate = true;
+      await latestResult.save();
+    }
+
+    await Candidate.updateOne(
+      { _id: candidateId },
+      {
+        $set: {
+          lastScreenedAt: latestResult?.createdAt || null,
+        },
+      }
+    );
+  }
+};
+
+const processScreeningRunJob = async ({ screeningRunId, userId }) => {
+  const screeningRun = await ScreeningRun.findById(screeningRunId);
+  if (!screeningRun) {
+    return;
+  }
+
+  try {
+    const job = await findJobOrThrow(screeningRun.jobId);
+    const resumeFiles = await ResumeFile.find({
+      _id: { $in: screeningRun.input?.resumeFileIds || [] },
+      isDeleted: false,
+    }).select("_id candidateId jobId parseStatus createdAt");
+
+    const candidateIds =
+      screeningRun.input?.candidateIds?.map((candidateId) => String(candidateId)) || [];
+
+    if (!resumeFiles.length || !candidateIds.length) {
+      throw buildServiceError(
+        "No screening input is available for this run",
+        400,
+        "SCREENING_INPUT_EMPTY"
+      );
+    }
+
+    screeningRun.status = "running";
+    screeningRun.startedAt = screeningRun.startedAt || new Date();
+    screeningRun.finishedAt = null;
+    screeningRun.errorSummary = null;
+    await screeningRun.save();
+
+    const resumeFilesByCandidate = groupResumeFilesByCandidate(resumeFiles);
+    const candidateNameMap = new Map(
+      (
+        await Candidate.find({ _id: { $in: candidateIds } }).select("_id fullName")
+      ).map((candidate) => [String(candidate._id), candidate.fullName || String(candidate._id)])
+    );
+    const generatedResults = [];
+    let failedCount = 0;
+    const failedDetails = [];
+    const batchSize = screeningRun.queueMeta?.batchSize || 20;
+
+    for (let index = 0; index < candidateIds.length; index += 1) {
+      const candidateId = candidateIds[index];
+      const bestResumeFile = selectBestResumeFile(resumeFilesByCandidate.get(candidateId) || []);
+
+      screeningRun.queueMeta.currentBatch = Math.ceil((index + 1) / batchSize);
+      await screeningRun.save();
+
+      try {
+        let resumeFileIdForScoring = bestResumeFile?._id || null;
+
+        if (bestResumeFile && bestResumeFile.parseStatus !== "parsed") {
+          try {
+            await parseResumeFileService(bestResumeFile._id);
+          } catch (_parseError) {
+            // Keep screening resilient: continue scoring from candidate profile even if resume parsing fails.
+            resumeFileIdForScoring = null;
+          }
+        }
+
+        let result;
+        try {
+          result = await generateScreeningResultService({
+            candidateId,
+            resumeFileId: resumeFileIdForScoring,
+            job,
+            screeningRun,
+            provider: screeningRun.aiProvider,
+          });
+        } catch (providerError) {
+          if (screeningRun.aiProvider !== "rule_based") {
+            result = await generateScreeningResultService({
+              candidateId,
+              resumeFileId: resumeFileIdForScoring,
+              job,
+              screeningRun,
+              provider: "rule_based",
+            });
+          } else {
+            throw providerError;
+          }
+        }
+
+        generatedResults.push({
+          candidateId,
+          resumeFileId: resumeFileIdForScoring,
+          matchingScore: result.matchingScore,
+          statusBadge: result.statusBadge,
+          rankingPosition: null,
+          scoreBreakdown: result.scoreBreakdown,
+          fitScores: result.fitScores,
+          recommendation: result.recommendation,
+          matchedSkills: result.matchedSkills,
+          missingSkills: result.missingSkills,
+          optionalSkills: result.optionalSkills,
+          strengths: result.strengths,
+          gaps: result.gaps,
+          redFlags: result.redFlags,
+          aiSummary: result.aiSummary,
+          explanation: result.explanation,
+          confidenceScore: result.confidenceScore,
+          hrReview: result.hrReview,
+          flags: result.flags,
+        });
+      } catch (error) {
+        failedCount += 1;
+        failedDetails.push(
+          `${candidateNameMap.get(String(candidateId)) || String(candidateId)}: ${compactErrorMessage(
+            error?.message
+          )}`
+        );
+      }
+    }
+
+    const rankedResults = [...generatedResults]
+      .sort((left, right) => right.matchingScore - left.matchingScore)
+      .map((result, index) => ({
+        ...result,
+        rankingPosition: index + 1,
+      }));
+
+    if (rankedResults.length) {
+      await createScreeningResultsBulkService(
+        {
+          screeningRunId: screeningRun._id,
+          results: rankedResults,
+        },
+        userId
+      );
+    }
+
+    screeningRun.totals.total = candidateIds.length;
+    screeningRun.totals.processed = rankedResults.length;
+    screeningRun.totals.failed = failedCount;
+    screeningRun.status = rankedResults.length ? "completed" : "failed";
+    screeningRun.finishedAt = new Date();
+    screeningRun.errorSummary = failedCount
+      ? `${failedCount} candidate(s) failed during screening. ${failedDetails
+          .slice(0, 3)
+          .join(" | ")}`
+      : null;
+    await screeningRun.save();
+
+    await refreshJobStats(screeningRun.jobId);
+  } catch (error) {
+    screeningRun.status = "failed";
+    screeningRun.finishedAt = new Date();
+    screeningRun.errorSummary = error.message;
+    await screeningRun.save();
+  }
+};
+
+const processScreeningQueue = async () => {
+  if (isProcessingQueue) {
+    return;
+  }
+
+  isProcessingQueue = true;
+
+  while (screeningQueue.length) {
+    const job = screeningQueue.shift();
+    queuedRunIds.delete(String(job.screeningRunId));
+    await processScreeningRunJob(job);
+  }
+
+  isProcessingQueue = false;
+};
+
+const enqueueScreeningRun = async ({ screeningRunId, userId }) => {
+  const normalizedRunId = String(screeningRunId);
+  if (queuedRunIds.has(normalizedRunId)) {
+    return;
+  }
+
+  queuedRunIds.add(normalizedRunId);
+  screeningQueue.push({
+    screeningRunId: normalizedRunId,
+    userId: String(userId),
+  });
+
+  setTimeout(() => {
+    processScreeningQueue().catch(() => {});
+  }, 0);
+};
+
+const findScreeningRunByIdOrThrow = async (screeningRunId) => {
+  ensureObjectId(screeningRunId, "INVALID_SCREENING_RUN_ID", "Invalid screening run id");
+
+  const screeningRun = await ScreeningRun.findById(screeningRunId)
+    .populate("jobId", "title status seniorityLevel")
+    .populate("createdBy", "fullName email")
+    .populate("rerunOfRunId", "status createdAt")
+    .populate("input.resumeFileIds", "originalFileName candidateId jobId uploadStatus parseStatus")
+    .populate("input.candidateIds", "fullName email currentTitle totalYearsExperience");
+
+  if (!screeningRun) {
+    throw buildServiceError("Screening run not found", 404, "SCREENING_RUN_NOT_FOUND");
+  }
+
+  return screeningRun;
 };
 
 export const createScreeningRunService = async (payload, userId, auditContext = {}) => {
@@ -203,7 +532,7 @@ export const createScreeningRunService = async (payload, userId, auditContext = 
       candidateIds: validatedCandidateIds,
     },
     filters: normalizeFilters(payload.filters),
-    aiProvider: payload.aiProvider || "openai",
+    aiProvider: resolveScreeningRunAiProvider(payload.aiProvider),
     modelName: payload.modelName ? String(payload.modelName).trim() : null,
     promptVersion: payload.promptVersion ? String(payload.promptVersion).trim() : null,
     configSnapshot: {
@@ -242,6 +571,11 @@ export const createScreeningRunService = async (payload, userId, auditContext = 
     userAgent: auditContext.userAgent || null,
   });
 
+  await enqueueScreeningRun({
+    screeningRunId: screeningRun._id,
+    userId,
+  });
+
   return ScreeningRun.findById(screeningRun._id)
     .populate("jobId", "title status seniorityLevel")
     .populate("createdBy", "fullName email")
@@ -250,9 +584,7 @@ export const createScreeningRunService = async (payload, userId, auditContext = 
 };
 
 export const getScreeningRunsService = async (query) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
 
   const filter = {};
 
@@ -278,32 +610,11 @@ export const getScreeningRunsService = async (query) => {
     ScreeningRun.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };
 
 export const getScreeningRunByIdService = async (screeningRunId) => {
-  ensureObjectId(screeningRunId, "INVALID_SCREENING_RUN_ID", "Invalid screening run id");
-
-  const screeningRun = await ScreeningRun.findById(screeningRunId)
-    .populate("jobId", "title status seniorityLevel")
-    .populate("createdBy", "fullName email")
-    .populate("rerunOfRunId", "status createdAt")
-    .populate("input.resumeFileIds", "originalFileName candidateId jobId uploadStatus parseStatus")
-    .populate("input.candidateIds", "fullName email currentTitle totalYearsExperience");
-
-  if (!screeningRun) {
-    throw buildServiceError("Screening run not found", 404, "SCREENING_RUN_NOT_FOUND");
-  }
-
-  return screeningRun;
+  return findScreeningRunByIdOrThrow(screeningRunId);
 };
 
 export const updateScreeningRunStatusService = async (screeningRunId, payload) => {
@@ -372,4 +683,70 @@ export const updateScreeningRunStatusService = async (screeningRunId, payload) =
   return ScreeningRun.findById(screeningRun._id)
     .populate("jobId", "title status seniorityLevel")
     .populate("createdBy", "fullName email");
+};
+
+export const deleteScreeningRunService = async (screeningRunId, userId, auditContext = {}) => {
+  if (!userId) {
+    throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
+  }
+
+  const screeningRun = await ScreeningRun.findById(screeningRunId);
+  if (!screeningRun) {
+    throw buildServiceError("Screening run not found", 404, "SCREENING_RUN_NOT_FOUND");
+  }
+
+  if (screeningRun.status === "running") {
+    throw buildServiceError(
+      "Cannot delete a screening run while it is running",
+      409,
+      "SCREENING_RUN_DELETE_NOT_ALLOWED"
+    );
+  }
+
+  removeQueuedScreeningRun(screeningRun._id);
+
+  const relatedResults = await ScreeningResult.find({
+    screeningRunId: screeningRun._id,
+  }).select("_id candidateId jobId");
+
+  const affectedCandidateIds = relatedResults.map((result) => result.candidateId);
+  const affectedJobId = screeningRun.jobId;
+
+  if (relatedResults.length) {
+    await ScreeningResult.deleteMany({
+      screeningRunId: screeningRun._id,
+    });
+  }
+
+  await ScreeningRun.deleteOne({ _id: screeningRun._id });
+
+  if (affectedCandidateIds.length) {
+    await syncLatestResultsForCandidates({
+      jobId: affectedJobId,
+      candidateIds: affectedCandidateIds,
+    });
+  }
+
+  await refreshJobStats(affectedJobId);
+
+  await logAuditEventService({
+    actorId: userId,
+    actorEmail: auditContext.actorEmail || null,
+    entityType: "ScreeningRun",
+    entityId: screeningRun._id,
+    action: "screening_run_deleted",
+    module: "screening",
+    severity: "warning",
+    metadata: {
+      jobId: screeningRun.jobId,
+      deletedResultsCount: relatedResults.length,
+    },
+    ipAddress: auditContext.ipAddress || null,
+    userAgent: auditContext.userAgent || null,
+  });
+
+  return {
+    id: screeningRunId,
+    deletedResultsCount: relatedResults.length,
+  };
 };

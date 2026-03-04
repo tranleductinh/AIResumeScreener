@@ -1,14 +1,13 @@
 import {
   FileSearch,
-  CheckCircle2,
   File,
   FileText,
   LoaderCircle,
   PlayCircle,
   Rocket,
+  Trash2,
   Upload,
   X,
-  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -32,11 +31,19 @@ import {
 } from "@/services/api/resume-files";
 import {
   createScreeningRun,
+  deleteScreeningRun,
   getScreeningRuns,
-  updateScreeningRunStatus,
 } from "@/services/api/screening-runs";
+import { getScreeningRunResults } from "@/services/api/screening-results";
 
 const defaultSkills = ["React.js", "Node.js", "TypeScript", "AWS"];
+const allowedFileTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const maxUploadBytes = 10 * 1024 * 1024;
+const fallbackParseMarker = "Fallback parse was generated because file download from storage failed.";
 
 const formatBytes = (value) => {
   if (!value && value !== 0) return "0 B";
@@ -57,6 +64,12 @@ const getStatusBadgeVariant = (status) => {
   return "outline";
 };
 
+const getResultBadgeVariant = (statusBadge) => {
+  if (statusBadge === "strong_fit") return "success";
+  if (statusBadge === "potential") return "warning";
+  return "destructive";
+};
+
 const UploadAndScreeningPage = () => {
   const fileInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
@@ -69,12 +82,18 @@ const UploadAndScreeningPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [screeningLoading, setScreeningLoading] = useState(false);
   const [startingRun, setStartingRun] = useState(false);
-  const [updatingRunId, setUpdatingRunId] = useState("");
   const [parsingResumeId, setParsingResumeId] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [screeningResults, setScreeningResults] = useState([]);
+  const [resultsLoading, setResultsLoading] = useState(false);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job._id === selectedJobId) || null,
     [jobs, selectedJobId]
+  );
+  const selectedRun = useMemo(
+    () => screeningRuns.find((run) => run._id === selectedRunId) || screeningRuns[0] || null,
+    [screeningRuns, selectedRunId]
   );
 
   const fetchJobs = async () => {
@@ -118,6 +137,27 @@ const UploadAndScreeningPage = () => {
     }
   };
 
+  const fetchScreeningResults = async (screeningRunId) => {
+    if (!screeningRunId) {
+      setScreeningResults([]);
+      return;
+    }
+
+    try {
+      setResultsLoading(true);
+      const response = await getScreeningRunResults(screeningRunId, {
+        page: 1,
+        limit: 10,
+        sort: "ranking_asc",
+      });
+      setScreeningResults(response?.data?.data?.items || []);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot fetch screening results");
+    } finally {
+      setResultsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
   }, []);
@@ -127,11 +167,81 @@ const UploadAndScreeningPage = () => {
     fetchScreeningRuns(selectedJobId);
   }, [selectedJobId]);
 
+  useEffect(() => {
+    if (!screeningRuns.length) {
+      setSelectedRunId("");
+      setScreeningResults([]);
+      return;
+    }
+
+    if (!selectedRunId || !screeningRuns.some((run) => run._id === selectedRunId)) {
+      setSelectedRunId(screeningRuns[0]._id);
+    }
+  }, [screeningRuns, selectedRunId]);
+
+  useEffect(() => {
+    if (!selectedRun?._id) {
+      setScreeningResults([]);
+      return;
+    }
+
+    fetchScreeningResults(selectedRun._id);
+  }, [selectedRun?._id]);
+
+  useEffect(() => {
+    if (!selectedJobId || !selectedRun?._id || !["queued", "running"].includes(selectedRun.status)) {
+      return undefined;
+    }
+
+    const poller = window.setInterval(() => {
+      fetchScreeningRuns(selectedJobId);
+      fetchScreeningResults(selectedRun._id);
+    }, 3000);
+
+    return () => window.clearInterval(poller);
+  }, [selectedJobId, selectedRun?._id, selectedRun?.status]);
+
   const handleSelectFiles = (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
 
-    setSelectedFiles((previous) => [...previous, ...files].slice(0, 50));
+    const acceptedFiles = [];
+    const rejectedMessages = [];
+
+    files.forEach((file) => {
+      const fileKey = `${file.name}-${file.size}`;
+      const hasDuplicate = [...selectedFiles, ...acceptedFiles].some(
+        (queuedFile) => `${queuedFile.name}-${queuedFile.size}` === fileKey
+      );
+
+      if (!allowedFileTypes.has(file.type)) {
+        rejectedMessages.push(`${file.name}: unsupported file type`);
+        return;
+      }
+
+      if (file.size > maxUploadBytes) {
+        rejectedMessages.push(`${file.name}: file exceeds 10MB`);
+        return;
+      }
+
+      if (hasDuplicate) {
+        rejectedMessages.push(`${file.name}: duplicate file skipped`);
+        return;
+      }
+
+      acceptedFiles.push(file);
+    });
+
+    if (rejectedMessages.length) {
+      toast.error(rejectedMessages[0]);
+    }
+
+    if (!acceptedFiles.length) {
+      event.target.value = "";
+      return;
+    }
+
+    setSelectedFiles((previous) => [...previous, ...acceptedFiles].slice(0, 50));
     event.target.value = "";
   };
 
@@ -210,12 +320,19 @@ const UploadAndScreeningPage = () => {
 
     try {
       setStartingRun(true);
-      await createScreeningRun({
+      const response = await createScreeningRun({
         jobId: selectedJobId,
         resumeFileIds: resumeFiles.map((file) => file._id),
       });
-      toast.success("Screening run created");
-      await fetchScreeningRuns(selectedJobId);
+      const createdRun = response?.data?.data || null;
+      if (createdRun?._id) {
+        setSelectedRunId(createdRun._id);
+      }
+      toast.success("Screening run queued");
+      await Promise.all([
+        fetchScreeningRuns(selectedJobId),
+        createdRun?._id ? fetchScreeningResults(createdRun._id) : Promise.resolve(),
+      ]);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Cannot create screening run");
     } finally {
@@ -223,16 +340,23 @@ const UploadAndScreeningPage = () => {
     }
   };
 
-  const handleUpdateRunStatus = async (runId, status) => {
+  const handleDeleteScreeningRun = async (screeningRunId) => {
+    if (!window.confirm("Delete this screening run and all of its screening results?")) {
+      return;
+    }
+
     try {
-      setUpdatingRunId(runId);
-      await updateScreeningRunStatus(runId, { status });
-      toast.success("Screening run updated");
+      await deleteScreeningRun(screeningRunId);
+      toast.success("Screening run deleted");
+
+      if (selectedRunId === screeningRunId) {
+        setSelectedRunId("");
+        setScreeningResults([]);
+      }
+
       await fetchScreeningRuns(selectedJobId);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Cannot update screening run");
-    } finally {
-      setUpdatingRunId("");
+      toast.error(err?.response?.data?.message || "Cannot delete screening run");
     }
   };
 
@@ -245,7 +369,7 @@ const UploadAndScreeningPage = () => {
             Upload &amp; AI Screening
           </h1>
           <p className="text-slate-300">
-            Upload multiple resumes, track file metadata, and prepare the batch for screening.
+            Upload multiple resumes, parse them, and run AI matching against the selected job.
           </p>
           <Button
             variant="outline"
@@ -317,7 +441,7 @@ const UploadAndScreeningPage = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <CardDescription className="text-sm">
-                Uploaded resumes can be grouped into screening runs before AI matching starts.
+                Uploaded resumes will be parsed automatically during screening if they are still pending.
               </CardDescription>
               {uploading ? (
                 <>
@@ -335,7 +459,7 @@ const UploadAndScreeningPage = () => {
             <CardHeader>
               <CardTitle>Screening Runs</CardTitle>
               <CardDescription>
-                Start a run from uploaded resumes and update workflow status manually for now.
+                Starting a run will parse missing resumes, generate AI scores, save ranking results, and complete the batch automatically.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -349,7 +473,7 @@ const UploadAndScreeningPage = () => {
                 <Button
                   onClick={handleStartScreeningRun}
                   disabled={startingRun || !selectedJobId || !resumeFiles.length}>
-                  {startingRun ? "Starting..." : "Start Run"}
+                  {startingRun ? "Running AI..." : "Start Run"}
                 </Button>
               </div>
 
@@ -385,35 +509,47 @@ const UploadAndScreeningPage = () => {
                         <div>Provider: {run.aiProvider}</div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateRunStatus(run._id, "running")}
-                          disabled={updatingRunId === run._id || run.status !== "queued"}>
-                          <LoaderCircle className="size-4" />
-                          Running
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateRunStatus(run._id, "completed")}
-                          disabled={
-                            updatingRunId === run._id || !["queued", "running"].includes(run.status)
-                          }>
-                          <CheckCircle2 className="size-4" />
-                          Complete
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateRunStatus(run._id, "failed")}
-                          disabled={
-                            updatingRunId === run._id || !["queued", "running"].includes(run.status)
-                          }>
-                          <XCircle className="size-4" />
-                          Fail
-                        </Button>
+                      <div className="space-y-3">
+                        <Progress
+                          value={
+                            run?.totals?.total
+                              ? Math.round(((run?.totals?.processed || 0) / run.totals.total) * 100)
+                              : 0
+                          }
+                        />
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-muted-foreground">
+                            {run.status === "queued" && "Waiting in background queue"}
+                            {run.status === "running" && "AI is scoring candidates in the background"}
+                            {run.status === "completed" && "Results are ready to review"}
+                            {run.status === "failed" && "Run failed. Check error summary or retry"}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant={selectedRun?._id === run._id ? "default" : "outline"}
+                              onClick={() => setSelectedRunId(run._id)}>
+                              View Results
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => handleDeleteScreeningRun(run._id)}
+                              disabled={run.status === "running"}
+                              title={
+                                run.status === "running"
+                                  ? "Cannot delete a run while it is running"
+                                  : "Delete run"
+                              }>
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        {run?.errorSummary ? (
+                          <p className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+                            {run.errorSummary}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   ))
@@ -510,6 +646,11 @@ const UploadAndScreeningPage = () => {
               </p>
               {resumeFiles.length ? (
                 resumeFiles.map((file) => (
+                  (() => {
+                    const isFallbackParsed = String(file.extractedText || "").includes(
+                      fallbackParseMarker
+                    );
+                    return (
                   <div
                     key={file._id}
                     className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
@@ -540,12 +681,21 @@ const UploadAndScreeningPage = () => {
                           Preview: {file.extractedTextPreview}
                         </p>
                       ) : null}
+                      {file?.parseError ? (
+                        <p className="rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
+                          Parse error: {file.parseError}
+                        </p>
+                      ) : null}
                     </div>
                     <Button
                       size="icon"
                       variant="ghost"
                       onClick={() => handleParseResumeFile(file._id)}
-                      disabled={parsingResumeId === file._id || file.parseStatus === "parsing"}>
+                      disabled={
+                        parsingResumeId === file._id ||
+                        file.parseStatus === "parsing" ||
+                        (file.parseStatus === "parsed" && !isFallbackParsed)
+                      }>
                       <FileSearch className="size-4" />
                     </Button>
                     <Button
@@ -555,6 +705,8 @@ const UploadAndScreeningPage = () => {
                       <X className="size-4" />
                     </Button>
                   </div>
+                    );
+                  })()
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -565,8 +717,151 @@ const UploadAndScreeningPage = () => {
           </CardContent>
         </Card>
       </section>
+
+      <Card>
+        <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle>Latest Screening Results</CardTitle>
+            <CardDescription>
+              Review ranked candidates from the selected screening run without leaving the upload page.
+            </CardDescription>
+          </div>
+          <div className="flex w-full max-w-sm items-center gap-3">
+            <select
+              value={selectedRun?._id || ""}
+              onChange={(event) => setSelectedRunId(event.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Select screening run</option>
+              {screeningRuns.map((run) => (
+                <option key={run._id} value={run._id}>
+                  {`${run?.jobId?.title || "Run"} • ${run.status} • ${formatDateTime(run.createdAt)}`}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              onClick={() => selectedRun?._id && fetchScreeningResults(selectedRun._id)}
+              disabled={!selectedRun?._id || resultsLoading}>
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {selectedRun ? (
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(selectedRun.status)}>{selectedRun.status}</Badge>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Processed</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">
+                  {selectedRun?.totals?.processed || 0}/{selectedRun?.totals?.total || 0}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Failed</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">
+                  {selectedRun?.totals?.failed || 0}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Provider</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">{selectedRun.aiProvider}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {resultsLoading ? (
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">
+              <LoaderCircle className="size-4 animate-spin" />
+              Loading screening results...
+            </div>
+          ) : null}
+
+          {!resultsLoading && !selectedRun ? (
+            <p className="text-sm text-muted-foreground">
+              Start or select a screening run to review ranked candidates here.
+            </p>
+          ) : null}
+
+          {!resultsLoading && selectedRun && !screeningResults.length ? (
+            <div className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">
+              {["queued", "running"].includes(selectedRun.status)
+                ? "The run is still processing in the background. Results will appear here automatically."
+                : "No screening results available for this run."}
+            </div>
+          ) : null}
+
+          {!resultsLoading && screeningResults.length ? (
+            <div className="space-y-3">
+              {screeningResults.map((result) => (
+                <div key={result._id} className="rounded-lg border bg-muted/20 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-foreground">
+                          #{result.rankingPosition || "-"} {result?.candidateId?.fullName || "Candidate"}
+                        </p>
+                        <Badge variant={getResultBadgeVariant(result.statusBadge)}>
+                          {result.statusBadge}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {result?.candidateId?.currentTitle || "No current title"} •{" "}
+                        {result?.candidateId?.totalYearsExperience || 0} years experience
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-black text-foreground">{result.matchingScore}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">match score</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-md border bg-background/60 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Matched Skills</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(result.matchedSkills || []).slice(0, 6).map((skill) => (
+                          <Badge key={skill} variant="outline">
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-background/60 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Missing Skills</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(result.missingSkills || []).slice(0, 6).map((skill) => (
+                          <Badge key={skill} variant="destructive">
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-background/60 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Confidence</p>
+                      <p className="mt-2 text-2xl font-bold text-foreground">
+                        {Math.round((result.confidenceScore || 0) * 100)}%
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm">
+                    <p className="font-medium text-foreground">{result.aiSummary}</p>
+                    <p className="text-muted-foreground">{result.explanation}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
 export default UploadAndScreeningPage;
+

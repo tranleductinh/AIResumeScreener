@@ -1,13 +1,5 @@
 import AuditLog from "../models/audit-log.model.js";
-
-const buildPagination = ({ page, limit, total }) => {
-  return {
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit) || 1,
-  };
-};
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 
 export const logAuditEventService = async ({
   actorId = null,
@@ -44,9 +36,7 @@ export const logAuditEventsBulkService = async (events = []) => {
 };
 
 export const getAuditLogsService = async (query = {}) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
 
   const filter = {};
 
@@ -75,8 +65,5 @@ export const getAuditLogsService = async (query = {}) => {
     AuditLog.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: buildPagination({ page, limit, total }),
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };

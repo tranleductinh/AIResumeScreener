@@ -1,4 +1,5 @@
 import Candidate from "../models/candidate.model.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 import {
   buildServiceError,
   countCandidateLinkedRecords,
@@ -97,9 +98,7 @@ export const createCandidateService = async (payload) => {
 };
 
 export const getCandidatesService = async (query) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
 
   const filter = { isDeleted: false };
 
@@ -120,15 +119,7 @@ export const getCandidatesService = async (query) => {
     Candidate.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };
 
 export const getCandidateByIdService = async (candidateId) => {

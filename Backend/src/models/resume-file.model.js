@@ -91,7 +91,6 @@ const resumeFileSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-resumeFileSchema.index({ candidateId: 1 });
 resumeFileSchema.index({ parseStatus: 1 });
 resumeFileSchema.index({ uploadStatus: 1, createdAt: -1 });
 resumeFileSchema.index({ candidateId: 1, createdAt: -1 });

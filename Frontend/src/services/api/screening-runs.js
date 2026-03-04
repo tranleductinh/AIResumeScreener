@@ -15,3 +15,7 @@ export const getScreeningRunById = async (screeningRunId) => {
 export const updateScreeningRunStatus = async (screeningRunId, payload) => {
   return api.patch(`/screening-runs/${screeningRunId}/status`, payload);
 };
+
+export const deleteScreeningRun = async (screeningRunId) => {
+  return api.delete(`/screening-runs/${screeningRunId}`);
+};

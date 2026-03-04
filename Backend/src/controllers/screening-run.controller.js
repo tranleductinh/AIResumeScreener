@@ -1,6 +1,7 @@
 import { error, success } from "../utils/response.js";
 import {
   createScreeningRunService,
+  deleteScreeningRunService,
   getScreeningRunByIdService,
   getScreeningRunsService,
   updateScreeningRunStatusService,
@@ -51,6 +52,19 @@ export const updateScreeningRunStatusController = async (req, res) => {
   try {
     const screeningRun = await updateScreeningRunStatusService(req.params.id, req.body);
     return success(res, "Update screening run status successfully", screeningRun, 200);
+  } catch (err) {
+    return error(res, err.message, err.errorCode, err.status);
+  }
+};
+
+export const deleteScreeningRunController = async (req, res) => {
+  try {
+    const result = await deleteScreeningRunService(req.params.id, req.user?._id, {
+      actorEmail: req.user?.email || null,
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+    });
+    return success(res, "Delete screening run successfully", result, 200);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);
   }

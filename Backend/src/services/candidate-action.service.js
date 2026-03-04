@@ -2,6 +2,7 @@ import Candidate from "../models/candidate.model.js";
 import CandidateAction from "../models/candidate-action.model.js";
 import ScreeningResult from "../models/screening-result.model.js";
 import { logAuditEventService } from "./audit-log.service.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 import {
   buildServiceError,
   ensureCandidateLinkedToJob,
@@ -222,9 +223,7 @@ export const createCandidateActionService = async (payload, userId, auditContext
 export const getJobCandidateActionsService = async (jobId, query = {}) => {
   await findJobOrThrow(jobId);
 
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
 
   const filter = { jobId };
 
@@ -253,13 +252,5 @@ export const getJobCandidateActionsService = async (jobId, query = {}) => {
     CandidateAction.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };

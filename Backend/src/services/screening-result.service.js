@@ -1,6 +1,7 @@
 import Candidate from "../models/candidate.model.js";
 import ScreeningResult from "../models/screening-result.model.js";
 import ScreeningRun from "../models/screening-run.model.js";
+import { buildPaginationResult, parsePagination } from "../utils/pagination.js";
 import {
   buildServiceError,
   ensureObjectId,
@@ -93,15 +94,6 @@ const populateResultQuery = (query) => {
     .populate("resumeFileId", "originalFileName uploadStatus parseStatus")
     .populate("jobId", "title seniorityLevel")
     .populate("screeningRunId", "status createdAt");
-};
-
-const buildPagination = ({ page, limit, total }) => {
-  return {
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit) || 1,
-  };
 };
 
 const resolveCandidateIdsByExperience = async (experienceMin) => {
@@ -241,9 +233,7 @@ const sortResultsInMemory = (items, sort) => {
 };
 
 const executeResultQuery = async ({ filter, query = {} }) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = parsePagination(query);
   const sort = query.sort || "ranking_asc";
 
   if (sort === "experience_desc" || sort === "experience_asc") {
@@ -253,7 +243,12 @@ const executeResultQuery = async ({ filter, query = {} }) => {
 
     return {
       items: paginatedItems,
-      pagination: buildPagination({ page, limit, total: sortedItems.length }),
+      pagination: buildPaginationResult({
+        items: paginatedItems,
+        page,
+        limit,
+        total: sortedItems.length,
+      }).pagination,
     };
   }
 
@@ -265,10 +260,7 @@ const executeResultQuery = async ({ filter, query = {} }) => {
     ScreeningResult.countDocuments(filter),
   ]);
 
-  return {
-    items,
-    pagination: buildPagination({ page, limit, total }),
-  };
+  return buildPaginationResult({ items, page, limit, total });
 };
 
 const buildResultPayload = async ({ result, screeningRun, userId }) => {

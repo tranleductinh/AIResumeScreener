@@ -34,6 +34,7 @@ export const parseResumeUpload = async (req, res, next) => {
   const files = [];
   const fileWritePromises = [];
   let hasFailed = false;
+  let failureMessage = "One or more files failed validation. Only PDF/DOC/DOCX up to 10MB are allowed.";
 
   const busboy = new Busboy({
     headers: req.headers,
@@ -52,6 +53,7 @@ export const parseResumeUpload = async (req, res, next) => {
 
     if (!allowedMimeTypes.has(mimeType)) {
       hasFailed = true;
+      failureMessage = `Unsupported file type for ${safeName}. Only PDF, DOC, and DOCX are allowed.`;
       file.resume();
       return;
     }
@@ -68,6 +70,7 @@ export const parseResumeUpload = async (req, res, next) => {
 
     file.on("limit", () => {
       hasFailed = true;
+      failureMessage = `${safeName} exceeds the 10MB upload limit.`;
       file.unpipe(writeStream);
       writeStream.destroy();
       fs.promises.rm(absolutePath, { force: true }).catch(() => {});
@@ -100,7 +103,7 @@ export const parseResumeUpload = async (req, res, next) => {
       if (hasFailed) {
         return error(
           res,
-          "One or more files failed validation. Only PDF/DOC/DOCX up to 10MB are allowed.",
+          failureMessage,
           "UPLOAD_VALIDATION_FAILED",
           400
         );

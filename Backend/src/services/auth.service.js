@@ -3,28 +3,25 @@ import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
 import { generateToken } from "../utils/generateToken.js";
-import admin from "../config/firebase.js";
+import { buildServiceError } from "../utils/reference-validation.js";
+import getFirebaseAdmin from "../config/firebase.js";
 
 export const googleLogin = async (idToken) => {
   try {
     if (!idToken) {
-      const errors = new Error();
-      errors.message = "Token is required";
-      errors.errorCode = "TOKEN_IS_REQUIRED";
-      errors.status = 400;
-      throw errors;
+      throw buildServiceError("Token is required", 400, "TOKEN_IS_REQUIRED");
     }
 
     const tokenParts = idToken.split(".");
     if (tokenParts.length !== 3) {
-      const errors = new Error();
-      errors.message =
-        "Invalid token format. Firebase ID token must have 3 parts.";
-      errors.errorCode = "INVALID_TOKEN_FORMAT";
-      errors.status = 400;
-      throw errors;
+      throw buildServiceError(
+        "Invalid token format. Firebase ID token must have 3 parts.",
+        400,
+        "INVALID_TOKEN_FORMAT"
+      );
     }
 
+    const admin = getFirebaseAdmin();
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const { uid, email, name, picture } = decodedToken;
 
@@ -45,6 +42,8 @@ export const googleLogin = async (idToken) => {
         fullName: name,
         avatar: picture,
         authType: "google",
+        joinedAt: new Date(),
+        emailVerifiedAt: decodedToken.email_verified ? new Date() : null,
       });
     }
 
@@ -55,7 +54,6 @@ export const googleLogin = async (idToken) => {
     });
 
     return {
-      message: "Đăng nhập thành công",
       refreshToken: tokens.refreshToken,
       accessToken: tokens.accessToken,
       user: {
@@ -66,35 +64,24 @@ export const googleLogin = async (idToken) => {
       },
     };
   } catch (error) {
-    console.error("Google login error:", error);
-
     if (error.code === "auth/argument-error") {
-      const errors = new Error();
-      errors.message = "Invalid Firebase ID token format";
-      errors.errorCode = "INVALID_TOKEN_FORMAT";
-      errors.status = 400;
-      throw errors;
+      throw buildServiceError("Invalid Firebase ID token format", 400, "INVALID_TOKEN_FORMAT");
     }
 
     if (error.code === "auth/id-token-expired") {
-      const errors = new Error();
-      errors.message = "Firebase ID token has expired";
-      errors.errorCode = "TOKEN_HAS_EXPIRED";
-      errors.status = 401;
-      throw errors;
+      throw buildServiceError("Firebase ID token has expired", 401, "TOKEN_HAS_EXPIRED");
     }
-    const errors = new Error();
-    errors.message = error.message;
-    errors.errorCode = "AUTHENTICATION_FAILED";
-    errors.status = 401;
-    throw errors;
+    if (error?.errorCode) {
+      throw error;
+    }
+    throw buildServiceError(error.message, 401, "AUTHENTICATION_FAILED");
   }
 };
 
 export const refreshTokenProcess = async (refreshTokenFromCookie) => {
   try {
     if (!refreshTokenFromCookie) {
-      throw new Error("Refresh token not found");
+      throw buildServiceError("Refresh token not found", 401, "REFRESH_TOKEN_NOT_FOUND");
     }
     let decoded;
     try {
@@ -102,25 +89,32 @@ export const refreshTokenProcess = async (refreshTokenFromCookie) => {
         refreshTokenFromCookie,
         process.env.JWT_REFRESH_SECRET
       );
-    } catch (error) {
-      throw new Error("Refresh token is not valid");
+    } catch (_error) {
+      throw buildServiceError("Refresh token is not valid", 401, "INVALID_REFRESH_TOKEN");
     }
     const user = await User.findById(decoded.id).select("+refreshToken");
     if (!user || user.refreshToken !== refreshTokenFromCookie) {
-      throw new Error("Refresh token is not valid");
+      throw buildServiceError("Refresh token is not valid", 401, "INVALID_REFRESH_TOKEN");
     }
     const token = generateToken(user._id);
+    await User.findByIdAndUpdate(user._id, {
+      refreshToken: token.refreshToken,
+    });
     return {
       accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
     };
   } catch (error) {
-    throw new Error(error.message);
+    if (error?.errorCode) {
+      throw error;
+    }
+    throw buildServiceError(error.message, 401, "REFRESH_TOKEN_FAILED");
   }
 };
 export const logOutUser = async (user_id) => {
   try {
     await User.findByIdAndUpdate(user_id, { refreshToken: null });
   } catch (error) {
-    throw new Error(error.message);
+    throw buildServiceError(error.message, 500, "LOGOUT_FAILED");
   }
 };

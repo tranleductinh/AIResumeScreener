@@ -138,7 +138,7 @@ const CandidateRankingPage = () => {
     }
 
     try {
-      const response = await getJobCandidateActions(jobId, { page: 1, limit: 200 });
+      const response = await getJobCandidateActions(jobId, { page: 1, limit: 100 });
       const items = response?.data?.data?.items || [];
       const nextLatestActions = {};
 
