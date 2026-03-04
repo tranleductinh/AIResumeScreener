@@ -30,8 +30,12 @@ const configuredOrigins = String(process.env.CORS_ORIGINS || "")
   .map((origin) => normalizeOrigin(origin))
   .filter(Boolean);
 
+const frontendAppOrigin = normalizeOrigin(process.env.FRONTEND_APP_URL || "");
+
 const allowedOrigins = new Set(
-  [...defaultAllowedOrigins, ...configuredOrigins].map((origin) => normalizeOrigin(origin))
+  [...defaultAllowedOrigins, ...configuredOrigins, frontendAppOrigin]
+    .map((origin) => normalizeOrigin(origin))
+    .filter(Boolean)
 );
 
 const allowVercelPreview = String(process.env.CORS_ALLOW_VERCEL_PREVIEW || "false") === "true";
@@ -67,8 +71,8 @@ export const createApp = () => {
         return callback(new Error("Not allowed by CORS"));
       },
       credentials: true,
-      methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     })
   );
   app.use(express.json());
