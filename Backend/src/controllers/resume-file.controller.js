@@ -3,6 +3,7 @@ import {
   deleteResumeFileService,
   getResumeFileByIdService,
   getResumeFilesService,
+  parseResumeFileService,
   uploadResumeFilesService,
 } from "../services/resume-file.service.js";
 
@@ -45,6 +46,15 @@ export const deleteResumeFileController = async (req, res) => {
   try {
     const result = await deleteResumeFileService(req.params.id);
     return success(res, "Delete resume file successfully", result, 200);
+  } catch (err) {
+    return error(res, err.message, err.errorCode, err.status);
+  }
+};
+
+export const parseResumeFileController = async (req, res) => {
+  try {
+    const result = await parseResumeFileService(req.params.id);
+    return success(res, "Parse resume file successfully", result, 200);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);
   }

@@ -1,4 +1,5 @@
 import {
+  FileSearch,
   CheckCircle2,
   File,
   FileText,
@@ -26,6 +27,7 @@ import { getJobs } from "@/services/api/jobs";
 import {
   deleteResumeFile,
   getResumeFiles,
+  parseResumeFile,
   uploadResumeFiles,
 } from "@/services/api/resume-files";
 import {
@@ -68,6 +70,7 @@ const UploadAndScreeningPage = () => {
   const [screeningLoading, setScreeningLoading] = useState(false);
   const [startingRun, setStartingRun] = useState(false);
   const [updatingRunId, setUpdatingRunId] = useState("");
+  const [parsingResumeId, setParsingResumeId] = useState("");
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job._id === selectedJobId) || null,
@@ -178,6 +181,19 @@ const UploadAndScreeningPage = () => {
       await fetchResumeFiles(selectedJobId);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Delete resume file failed");
+    }
+  };
+
+  const handleParseResumeFile = async (resumeFileId) => {
+    try {
+      setParsingResumeId(resumeFileId);
+      await parseResumeFile(resumeFileId);
+      toast.success("Resume parsed");
+      await fetchResumeFiles(selectedJobId);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Parse resume file failed");
+    } finally {
+      setParsingResumeId("");
     }
   };
 
@@ -519,7 +535,19 @@ const UploadAndScreeningPage = () => {
                         ) : null}
                         {file?.jobId?.title ? <span>Job: {file.jobId.title}</span> : null}
                       </div>
+                      {file?.extractedTextPreview ? (
+                        <p className="line-clamp-2 text-xs text-muted-foreground">
+                          Preview: {file.extractedTextPreview}
+                        </p>
+                      ) : null}
                     </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleParseResumeFile(file._id)}
+                      disabled={parsingResumeId === file._id || file.parseStatus === "parsing"}>
+                      <FileSearch className="size-4" />
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"

@@ -17,6 +17,10 @@ export const getResumeFileById = async (resumeFileId) => {
   return api.get(`/resume-files/${resumeFileId}`);
 };
 
+export const parseResumeFile = async (resumeFileId) => {
+  return api.post(`/resume-files/${resumeFileId}/parse`);
+};
+
 export const deleteResumeFile = async (resumeFileId) => {
   return api.delete(`/resume-files/${resumeFileId}`);
 };

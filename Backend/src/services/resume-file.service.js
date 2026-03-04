@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 
 import cloudinary from "../config/cloudinary.js";
+import mammoth from "mammoth";
+import pdfParse from "pdf-parse";
 import Candidate from "../models/candidate.model.js";
 import ResumeFile from "../models/resume-file.model.js";
 import { logAuditEventsBulkService } from "./audit-log.service.js";
@@ -50,6 +52,76 @@ const uploadFileToCloudinary = async (file) => {
   });
 
   return uploaded;
+};
+
+const normalizeExtractedText = (value) => {
+  return String(value || "")
+    .replace(/\r/g, " ")
+    .replace(/\t/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const buildExtractedTextPreview = (text) => {
+  const normalized = normalizeExtractedText(text);
+  if (!normalized) return "";
+  return normalized.slice(0, 280);
+};
+
+const fetchResumeFileBuffer = async (resumeFile) => {
+  if (resumeFile.storage?.provider === "cloudinary") {
+    const response = await fetch(resumeFile.storage.url);
+    if (!response.ok) {
+      throw buildServiceError(
+        "Cannot download resume file from storage",
+        502,
+        "RESUME_DOWNLOAD_FAILED"
+      );
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  if (resumeFile.storage?.provider === "local") {
+    return fs.promises.readFile(resumeFile.storage.pathOrKey);
+  }
+
+  throw buildServiceError(
+    `Unsupported storage provider for parsing: ${resumeFile.storage?.provider || "unknown"}`,
+    400,
+    "UNSUPPORTED_STORAGE_PROVIDER"
+  );
+};
+
+const parseBufferByMimeType = async ({ mimeType, fileBuffer }) => {
+  if (mimeType === "application/pdf") {
+    const parsed = await pdfParse(fileBuffer);
+    return {
+      extractedText: normalizeExtractedText(parsed.text),
+      pageCount: parsed.numpages || null,
+    };
+  }
+
+  if (
+    mimeType ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    const parsed = await mammoth.extractRawText({ buffer: fileBuffer });
+    return {
+      extractedText: normalizeExtractedText(parsed.value),
+      pageCount: null,
+    };
+  }
+
+  if (mimeType === "application/msword") {
+    throw buildServiceError(
+      "Legacy DOC parsing is not supported. Please upload DOCX or PDF.",
+      400,
+      "DOC_PARSING_NOT_SUPPORTED"
+    );
+  }
+
+  throw buildServiceError("Unsupported mime type for parsing", 400, "UNSUPPORTED_MIME_TYPE");
 };
 
 export const uploadResumeFilesService = async ({ upload, userId, auditContext = {} }) => {
@@ -193,6 +265,68 @@ export const getResumeFileByIdService = async (resumeFileId) => {
   }
 
   return resumeFile;
+};
+
+export const parseResumeFileService = async (resumeFileId) => {
+  const resumeFile = await findResumeFileOrThrow(resumeFileId);
+
+  if (resumeFile.parseStatus === "parsing") {
+    throw buildServiceError(
+      "Resume file is already being parsed",
+      409,
+      "RESUME_ALREADY_PARSING"
+    );
+  }
+
+  resumeFile.parseStatus = "parsing";
+  resumeFile.parseAttempts = (resumeFile.parseAttempts || 0) + 1;
+  resumeFile.parseError = null;
+  await resumeFile.save();
+
+  try {
+    const fileBuffer = await fetchResumeFileBuffer(resumeFile);
+    const parsedResult = await parseBufferByMimeType({
+      mimeType: resumeFile.mimeType,
+      fileBuffer,
+    });
+
+    resumeFile.extractedText = parsedResult.extractedText;
+    resumeFile.extractedTextPreview = buildExtractedTextPreview(parsedResult.extractedText);
+    resumeFile.pageCount = parsedResult.pageCount;
+    resumeFile.parseStatus = "parsed";
+    resumeFile.parsedAt = new Date();
+    resumeFile.parseError = null;
+    await resumeFile.save();
+
+    await Candidate.updateOne(
+      { _id: resumeFile.candidateId },
+      {
+        $set: {
+          profileStatus: "parsed",
+        },
+      }
+    );
+
+    return ResumeFile.findById(resumeFile._id)
+      .populate("candidateId", "fullName email")
+      .populate("jobId", "title");
+  } catch (error) {
+    resumeFile.parseStatus = "failed";
+    resumeFile.parseError = error.message;
+    resumeFile.parsedAt = null;
+    await resumeFile.save();
+
+    await Candidate.updateOne(
+      { _id: resumeFile.candidateId },
+      {
+        $set: {
+          profileStatus: "failed_parse",
+        },
+      }
+    );
+
+    throw error;
+  }
 };
 
 export const deleteResumeFileService = async (resumeFileId) => {
