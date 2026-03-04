@@ -59,6 +59,7 @@ const isAllowedOrigin = (origin) => {
 
 export const createApp = () => {
   const app = express();
+  app.set("trust proxy", 1);
 
   app.use(cookieParser());
   app.use(

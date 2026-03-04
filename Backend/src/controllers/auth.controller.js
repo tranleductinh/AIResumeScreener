@@ -13,11 +13,29 @@ import {
 import dotenv from "dotenv";
 dotenv.config();
 
+const normalizeSameSite = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "none" || normalized === "lax" || normalized === "strict") {
+    return normalized;
+  }
+  return null;
+};
+
+const isProductionLike =
+  process.env.NODE_ENV === "production" || String(process.env.RENDER || "").length > 0;
+
+const resolvedSameSite = normalizeSameSite(process.env.COOKIE_SAMESITE) || (isProductionLike ? "none" : "lax");
+const resolvedSecure =
+  process.env.COOKIE_SECURE === "true" || resolvedSameSite === "none" || isProductionLike;
+const resolvedCookieDomain = String(process.env.COOKIE_DOMAIN || "").trim();
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.COOKIE_SECURE === "true",
-  sameSite: process.env.COOKIE_SAMESITE || "lax",
+  secure: resolvedSecure,
+  sameSite: resolvedSameSite,
+  path: "/",
   maxAge: 7 * 24 * 60 * 60 * 1000,
+  ...(resolvedCookieDomain ? { domain: resolvedCookieDomain } : {}),
 };
 
 export const googleLoginController = async (req, res) => {
@@ -120,6 +138,7 @@ export const refreshTokenController = async (req, res) => {
     res.cookie("refreshToken", token.refreshToken, COOKIE_OPTIONS);
     return success(res, "Refresh token successfully", token, 200);
   } catch (err) {
+    res.clearCookie("refreshToken", COOKIE_OPTIONS);
     return error(res, err.message, err.errorCode, err.status);
   }
 };
