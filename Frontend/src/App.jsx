@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import Layout from "@/components/layout";
+import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import PublicRoute from "@/components/PublicRoute";
 import CandidateComparisonPage from "@/pages/CandidateComparisonPage";
