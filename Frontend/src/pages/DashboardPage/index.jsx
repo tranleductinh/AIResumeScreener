@@ -5,51 +5,114 @@ import {
   History,
   Rocket,
   Sparkles,
-} from "lucide-react"
+  XCircle,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 
-import StatCard from "@/components/StatCard"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
+import StatCard from "@/components/StatCard";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import {
+  getDashboardRecentActivity,
+  getDashboardSummary,
+} from "@/services/api/dashboard";
 
-const stats = [
-  { label: "Total CVs", value: "12,450", delta: 12, trend: "positive" },
-  { label: "Active Jobs", value: "42", delta: 0, trend: "neutral" },
-  { label: "Shortlisted", value: "890", delta: 5, trend: "negative" },
-  { label: "AI Time Saved", value: "320 hrs", delta: 18, trend: "positive" },
-]
+const activityIcons = {
+  FileUp,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  History,
+};
 
-const scoreDistribution = [
-  { range: "0-20", value: 15 },
-  { range: "21-40", value: 35 },
-  { range: "41-60", value: 65 },
-  { range: "61-80", value: 85 },
-  { range: "81-100", value: 45 },
-]
+const formatRelativeTime = (value) => {
+  if (!value) return "-";
 
-const activities = [
-  {
-    title: "15 New Resumes Uploaded",
-    sub: "Senior Product Designer role",
-    time: "12 mins ago",
-    icon: FileUp,
-  },
-  {
-    title: "AI Analysis Complete",
-    sub: "Found 4 top candidates for Backend Engineer",
-    time: "2 hours ago",
-    icon: Sparkles,
-  },
-  {
-    title: "Job Posted Successfully",
-    sub: "Marketing Lead position is now active",
-    time: "5 hours ago",
-    icon: CheckCircle2,
-  },
-]
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
+
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes} mins ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hours ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} days ago`;
+};
 
 const DashboardPage = () => {
+  const [summary, setSummary] = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [summaryResponse, activityResponse] = await Promise.all([
+        getDashboardSummary(),
+        getDashboardRecentActivity({ page: 1, limit: 5 }),
+      ]);
+
+      setSummary(summaryResponse?.data?.data || null);
+      setActivities(activityResponse?.data?.data?.items || []);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Cannot fetch dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const stats = useMemo(() => {
+    const data = summary?.stats;
+    return [
+      {
+        label: "Total CVs",
+        value: data?.totalResumes ?? 0,
+        delta: 0,
+        trend: "neutral",
+      },
+      {
+        label: "Active Jobs",
+        value: data?.activeJobs ?? 0,
+        delta: 0,
+        trend: "neutral",
+      },
+      {
+        label: "Shortlisted",
+        value: data?.shortlistedCandidates ?? 0,
+        delta: 0,
+        trend: "neutral",
+      },
+      {
+        label: "AI Time Saved",
+        value: `${data?.estimatedTimeSavedHours ?? 0} hrs`,
+        delta: 0,
+        trend: "neutral",
+      },
+    ];
+  }, [summary]);
+
+  const scoreDistribution = summary?.scoreDistribution || [];
+  const candidateStatus = summary?.candidateStatus || {
+    inScreening: { count: 0, percentage: 0 },
+    shortlisted: { count: 0, percentage: 0 },
+    rejected: { count: 0, percentage: 0 },
+  };
+
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-8">
@@ -61,9 +124,9 @@ const DashboardPage = () => {
                 Real-time insights into your hiring pipeline and AI efficiency.
               </p>
             </div>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={fetchDashboardData}>
               <FileUp className="size-4" />
-              Upload Resume
+              {loading ? "Refreshing..." : "Refresh Dashboard"}
             </Button>
           </div>
 
@@ -81,19 +144,35 @@ const DashboardPage = () => {
             </CardHeader>
             <CardContent>
               <div className="flex h-64 items-end gap-4">
-                {scoreDistribution.map((entry) => (
-                  <div key={entry.range} className="flex flex-1 flex-col items-center gap-2">
-                    <div className="flex h-52 w-full items-end rounded-md bg-secondary">
+                {scoreDistribution.length ? (
+                  scoreDistribution.map((entry) => {
+                    const maxValue = Math.max(
+                      ...scoreDistribution.map((item) => item.value || 0),
+                      1
+                    );
+                    const height = Math.max(((entry.value || 0) / maxValue) * 100, 4);
+
+                    return (
                       <div
-                        className="w-full rounded-md bg-primary/80"
-                        style={{ height: `${entry.value}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-semibold text-muted-foreground">
-                      {entry.range}
-                    </span>
+                        key={entry.range}
+                        className="flex flex-1 flex-col items-center gap-2">
+                        <div className="flex h-52 w-full items-end rounded-md bg-secondary">
+                          <div
+                            className="w-full rounded-md bg-primary/80"
+                            style={{ height: `${height}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          {entry.range}
+                        </span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                    No screening results yet.
                   </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>
@@ -105,26 +184,32 @@ const DashboardPage = () => {
             <CardContent className="space-y-5">
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">In Screening</span>
-                  <span className="font-bold">65%</span>
+                  <span className="text-muted-foreground">
+                    In Screening ({candidateStatus.inScreening.count})
+                  </span>
+                  <span className="font-bold">{candidateStatus.inScreening.percentage}%</span>
                 </div>
-                <Progress value={65} />
+                <Progress value={candidateStatus.inScreening.percentage} />
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Shortlisted</span>
-                  <span className="font-bold">25%</span>
+                  <span className="text-muted-foreground">
+                    Shortlisted ({candidateStatus.shortlisted.count})
+                  </span>
+                  <span className="font-bold">{candidateStatus.shortlisted.percentage}%</span>
                 </div>
-                <Progress value={25} />
+                <Progress value={candidateStatus.shortlisted.percentage} />
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Rejected</span>
-                  <span className="font-bold">10%</span>
+                  <span className="text-muted-foreground">
+                    Rejected ({candidateStatus.rejected.count})
+                  </span>
+                  <span className="font-bold">{candidateStatus.rejected.percentage}%</span>
                 </div>
-                <Progress value={10} />
+                <Progress value={candidateStatus.rejected.percentage} />
               </div>
             </CardContent>
           </Card>
@@ -140,20 +225,27 @@ const DashboardPage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {activities.map((item) => (
-              <div key={item.title} className="flex gap-3">
-                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <item.icon className="size-4" />
-                </span>
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold">{item.title}</p>
-                  <p className="text-xs text-muted-foreground">{item.sub}</p>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {item.time}
-                  </p>
-                </div>
-              </div>
-            ))}
+            {activities.length ? (
+              activities.map((item) => {
+                const ActivityIcon = activityIcons[item.icon] || History;
+                return (
+                  <div key={item._id} className="flex gap-3">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <ActivityIcon className="size-4" />
+                    </span>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">{item.sub}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {formatRelativeTime(item.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -176,7 +268,7 @@ const DashboardPage = () => {
         </Card>
       </aside>
     </div>
-  )
-}
+  );
+};
 
-export default DashboardPage
+export default DashboardPage;
