@@ -1,3 +1,5 @@
+import { buildServiceError } from "../utils/reference-validation.js";
+
 const skillCatalog = [
   "react",
   "react.js",
@@ -81,6 +83,7 @@ const stopWords = new Set([
 ]);
 
 const sentenceSplitRegex = /(?<=[.!?])\s+|\n+/;
+const maxJsonChars = 12000;
 
 const normalizeWhitespace = (value) => {
   return String(value || "")
@@ -287,7 +290,7 @@ const buildScreeningConfig = ({
   };
 };
 
-export const analyzeJobDescriptionService = ({ title, jdText }) => {
+const buildRuleBasedAnalysis = ({ title, jdText }) => {
   const normalizedText = normalizeWhitespace(jdText);
   const sentences = extractSentences(normalizedText);
   const { requiredSkills, niceToHaveSkills, allSkills } = extractSkills(sentences);
@@ -318,4 +321,323 @@ export const analyzeJobDescriptionService = ({ title, jdText }) => {
       analyzedAt: new Date(),
     },
   };
+};
+
+const coerceStringArray = (value) => {
+  if (!Array.isArray(value)) return [];
+  return unique(
+    value
+      .map((item) => normalizeWhitespace(item))
+      .filter(Boolean)
+  );
+};
+
+const coerceNumberOrNull = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const normalizeProviderAnalysis = (rawResult, fallbackResult, provider) => {
+  const jdParsed = rawResult?.jdParsed || {};
+  const screeningConfig = rawResult?.screeningConfig || {};
+
+  const normalizedJdParsed = {
+    roleSummary:
+      normalizeWhitespace(jdParsed.roleSummary).slice(0, 400) ||
+      fallbackResult.jdParsed.roleSummary,
+    requiredSkills:
+      coerceStringArray(jdParsed.requiredSkills).slice(0, 12) ||
+      fallbackResult.jdParsed.requiredSkills,
+    niceToHaveSkills:
+      coerceStringArray(jdParsed.niceToHaveSkills).slice(0, 10) ||
+      fallbackResult.jdParsed.niceToHaveSkills,
+    minYearsExperience:
+      coerceNumberOrNull(jdParsed.minYearsExperience) ??
+      fallbackResult.jdParsed.minYearsExperience,
+    maxYearsExperience:
+      coerceNumberOrNull(jdParsed.maxYearsExperience) ??
+      fallbackResult.jdParsed.maxYearsExperience,
+    keywords:
+      coerceStringArray(jdParsed.keywords).slice(0, 12) ||
+      fallbackResult.jdParsed.keywords,
+    responsibilities:
+      coerceStringArray(jdParsed.responsibilities).slice(0, 6) ||
+      fallbackResult.jdParsed.responsibilities,
+    educationLevel:
+      normalizeWhitespace(jdParsed.educationLevel) ||
+      fallbackResult.jdParsed.educationLevel,
+  };
+
+  const mergedScreeningConfig = {
+    ...fallbackResult.screeningConfig,
+    autoRejectBelowScore:
+      coerceNumberOrNull(screeningConfig.autoRejectBelowScore) ??
+      fallbackResult.screeningConfig.autoRejectBelowScore,
+    shortlistAboveScore:
+      coerceNumberOrNull(screeningConfig.shortlistAboveScore) ??
+      fallbackResult.screeningConfig.shortlistAboveScore,
+    requiredSkillWeight:
+      coerceNumberOrNull(screeningConfig.requiredSkillWeight) ??
+      fallbackResult.screeningConfig.requiredSkillWeight,
+    experienceWeight:
+      coerceNumberOrNull(screeningConfig.experienceWeight) ??
+      fallbackResult.screeningConfig.experienceWeight,
+    educationWeight:
+      coerceNumberOrNull(screeningConfig.educationWeight) ??
+      fallbackResult.screeningConfig.educationWeight,
+    keywordWeight:
+      coerceNumberOrNull(screeningConfig.keywordWeight) ??
+      fallbackResult.screeningConfig.keywordWeight,
+    mustHaveSkills:
+      coerceStringArray(screeningConfig.mustHaveSkills).slice(0, 5) ||
+      fallbackResult.screeningConfig.mustHaveSkills,
+    allowAiAutoRecommendation:
+      typeof screeningConfig.allowAiAutoRecommendation === "boolean"
+        ? screeningConfig.allowAiAutoRecommendation
+        : fallbackResult.screeningConfig.allowAiAutoRecommendation,
+  };
+
+  return {
+    jdParsed: normalizedJdParsed,
+    screeningConfig: mergedScreeningConfig,
+    analysisMeta: {
+      provider,
+      analyzedAt: new Date(),
+      mode: "provider_api",
+    },
+  };
+};
+
+const extractJsonObject = (content) => {
+  const normalized = String(content || "").trim();
+  const fencedMatch = normalized.match(/```json\s*([\s\S]*?)```/i);
+  if (fencedMatch) {
+    return JSON.parse(fencedMatch[1]);
+  }
+
+  const firstBrace = normalized.indexOf("{");
+  const lastBrace = normalized.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return JSON.parse(normalized.slice(firstBrace, lastBrace + 1));
+  }
+
+  return JSON.parse(normalized);
+};
+
+const buildAnalysisPrompt = ({ title, jdText }) => {
+  return [
+    "Analyze the following job description and return JSON only.",
+    "Schema:",
+    JSON.stringify(
+      {
+        jdParsed: {
+          roleSummary: "string",
+          requiredSkills: ["string"],
+          niceToHaveSkills: ["string"],
+          minYearsExperience: 0,
+          maxYearsExperience: 0,
+          keywords: ["string"],
+          responsibilities: ["string"],
+          educationLevel: "string or null",
+        },
+        screeningConfig: {
+          autoRejectBelowScore: 0,
+          shortlistAboveScore: 0,
+          requiredSkillWeight: 0,
+          experienceWeight: 0,
+          educationWeight: 0,
+          keywordWeight: 0,
+          mustHaveSkills: ["string"],
+          allowAiAutoRecommendation: true,
+        },
+      },
+      null,
+      2
+    ),
+    "Rules:",
+    "- Return valid JSON only, no markdown.",
+    "- requiredSkills max 12 items.",
+    "- niceToHaveSkills max 10 items.",
+    "- responsibilities max 6 items.",
+    "- keywords max 12 items.",
+    "- mustHaveSkills max 5 items.",
+    "- Use null when data is unknown.",
+    "- Scores are percentages from 0 to 100.",
+    "- Weights are decimals and should sum approximately to 1.",
+    `Job title: ${title}`,
+    `Job description:\n${String(jdText || "").slice(0, maxJsonChars)}`,
+  ].join("\n\n");
+};
+
+const callOpenAiAnalysis = async ({ title, jdText }) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw buildServiceError(
+      "OPENAI_API_KEY is missing for AI_JD_PROVIDER=openai",
+      500,
+      "OPENAI_CONFIG_MISSING"
+    );
+  }
+
+  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      response_format: {
+        type: "json_object",
+      },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You extract structured hiring data from job descriptions. Return JSON only.",
+        },
+        {
+          role: "user",
+          content: buildAnalysisPrompt({ title, jdText }),
+        },
+      ],
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw buildServiceError(
+      `OpenAI JD analysis failed: ${errorText}`,
+      502,
+      "OPENAI_ANALYSIS_FAILED"
+    );
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw buildServiceError(
+      "OpenAI JD analysis returned empty content",
+      502,
+      "OPENAI_ANALYSIS_EMPTY"
+    );
+  }
+
+  return extractJsonObject(content);
+};
+
+const callGeminiAnalysis = async ({ title, jdText }) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw buildServiceError(
+      "GEMINI_API_KEY is missing for AI_JD_PROVIDER=gemini",
+      500,
+      "GEMINI_CONFIG_MISSING"
+    );
+  }
+
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const baseUrl =
+    process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta";
+  const response = await fetch(
+    `${baseUrl}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: buildAnalysisPrompt({ title, jdText }),
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw buildServiceError(
+      `Gemini JD analysis failed: ${errorText}`,
+      502,
+      "GEMINI_ANALYSIS_FAILED"
+    );
+  }
+
+  const payload = await response.json();
+  const content = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!content) {
+    throw buildServiceError(
+      "Gemini JD analysis returned empty content",
+      502,
+      "GEMINI_ANALYSIS_EMPTY"
+    );
+  }
+
+  return extractJsonObject(content);
+};
+
+const resolveProvider = () => {
+  const provider = String(process.env.AI_JD_PROVIDER || "rule_based")
+    .trim()
+    .toLowerCase();
+
+  if (!["rule_based", "openai", "gemini"].includes(provider)) {
+    throw buildServiceError(
+      "AI_JD_PROVIDER must be one of: rule_based, openai, gemini",
+      500,
+      "AI_PROVIDER_INVALID"
+    );
+  }
+
+  return provider;
+};
+
+export const analyzeJobDescriptionService = async ({ title, jdText }) => {
+  const fallbackResult = buildRuleBasedAnalysis({ title, jdText });
+  const provider = resolveProvider();
+
+  if (provider === "rule_based") {
+    return fallbackResult;
+  }
+
+  try {
+    const rawResult =
+      provider === "openai"
+        ? await callOpenAiAnalysis({ title, jdText })
+        : await callGeminiAnalysis({ title, jdText });
+
+    return normalizeProviderAnalysis(rawResult, fallbackResult, provider);
+  } catch (error) {
+    if (
+      error?.errorCode === "OPENAI_CONFIG_MISSING" ||
+      error?.errorCode === "GEMINI_CONFIG_MISSING"
+    ) {
+      throw error;
+    }
+
+    return {
+      ...fallbackResult,
+      analysisMeta: {
+        provider,
+        analyzedAt: new Date(),
+        mode: "fallback_rule_based",
+        fallbackReason: error?.message || "Provider call failed",
+      },
+    };
+  }
 };

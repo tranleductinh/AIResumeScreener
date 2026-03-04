@@ -109,7 +109,7 @@ export const analyzeJobJdService = async (jobId) => {
     throw buildServiceError("jdText is required for analysis", 400, "VALIDATION_ERROR");
   }
 
-  const analysis = analyzeJobDescriptionService({
+  const analysis = await analyzeJobDescriptionService({
     title: job.title,
     jdText: job.jdText,
   });
