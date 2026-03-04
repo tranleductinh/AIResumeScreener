@@ -4,6 +4,7 @@ import path from "path";
 import cloudinary from "../config/cloudinary.js";
 import Candidate from "../models/candidate.model.js";
 import ResumeFile from "../models/resume-file.model.js";
+import { logAuditEventsBulkService } from "./audit-log.service.js";
 import {
   buildServiceError,
   countResumeFileLinkedRecords,
@@ -51,7 +52,7 @@ const uploadFileToCloudinary = async (file) => {
   return uploaded;
 };
 
-export const uploadResumeFilesService = async ({ upload, userId }) => {
+export const uploadResumeFilesService = async ({ upload, userId, auditContext = {} }) => {
   if (!userId) {
     throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
   }
@@ -113,6 +114,27 @@ export const uploadResumeFilesService = async ({ upload, userId }) => {
       }
     }
   }
+
+  await logAuditEventsBulkService(
+    createdFiles.map((resumeFile) => ({
+      actorId: userId,
+      actorEmail: auditContext.actorEmail || null,
+      entityType: "ResumeFile",
+      entityId: resumeFile._id,
+      action: "resume_uploaded",
+      module: "resume_upload",
+      severity: "info",
+      metadata: {
+        candidateId: resumeFile.candidateId,
+        jobId: resumeFile.jobId,
+        originalFileName: resumeFile.originalFileName,
+        sizeBytes: resumeFile.sizeBytes,
+        uploadStatus: resumeFile.uploadStatus,
+      },
+      ipAddress: auditContext.ipAddress || null,
+      userAgent: auditContext.userAgent || null,
+    }))
+  );
 
   return createdFiles;
 };

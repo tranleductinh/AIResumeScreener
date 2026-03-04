@@ -9,7 +9,11 @@ import { getScreeningRunResultsService } from "../services/screening-result.serv
 
 export const createScreeningRunController = async (req, res) => {
   try {
-    const screeningRun = await createScreeningRunService(req.body, req.user?._id);
+    const screeningRun = await createScreeningRunService(req.body, req.user?._id, {
+      actorEmail: req.user?.email || null,
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+    });
     return success(res, "Create screening run successfully", screeningRun, 201);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);

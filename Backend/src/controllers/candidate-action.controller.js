@@ -6,7 +6,11 @@ import {
 
 export const createCandidateActionController = async (req, res) => {
   try {
-    const action = await createCandidateActionService(req.body, req.user?._id);
+    const action = await createCandidateActionService(req.body, req.user?._id, {
+      actorEmail: req.user?.email || null,
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+    });
     return success(res, "Create candidate action successfully", action, 201);
   } catch (err) {
     return error(res, err.message, err.errorCode, err.status);

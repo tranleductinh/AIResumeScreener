@@ -11,6 +11,11 @@ export const uploadResumeFilesController = async (req, res) => {
     const result = await uploadResumeFilesService({
       upload: req.resumeUpload,
       userId: req.user?._id,
+      auditContext: {
+        actorEmail: req.user?.email || null,
+        ipAddress: req.ip || null,
+        userAgent: req.get("user-agent") || null,
+      },
     });
     return success(res, "Upload resume files successfully", result, 201);
   } catch (err) {

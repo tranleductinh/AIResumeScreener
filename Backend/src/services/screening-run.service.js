@@ -1,6 +1,7 @@
 import ScreeningResult from "../models/screening-result.model.js";
 import ScreeningRun from "../models/screening-run.model.js";
 import ResumeFile from "../models/resume-file.model.js";
+import { logAuditEventService } from "./audit-log.service.js";
 import {
   buildServiceError,
   ensureObjectId,
@@ -152,7 +153,7 @@ const validateCandidateIdsForJob = async ({ candidateIds, jobId, resumeFiles }) 
   return candidateIds;
 };
 
-export const createScreeningRunService = async (payload, userId) => {
+export const createScreeningRunService = async (payload, userId, auditContext = {}) => {
   if (!userId) {
     throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
   }
@@ -220,6 +221,25 @@ export const createScreeningRunService = async (payload, userId) => {
       failed: 0,
     },
     queueMeta,
+  });
+
+  await logAuditEventService({
+    actorId: userId,
+    actorEmail: auditContext.actorEmail || null,
+    entityType: "ScreeningRun",
+    entityId: screeningRun._id,
+    action: "screening_run_started",
+    module: "screening",
+    severity: "info",
+    metadata: {
+      jobId: screeningRun.jobId,
+      runType: screeningRun.runType,
+      status: screeningRun.status,
+      totalCandidates: screeningRun.totals.total,
+      totalResumeFiles: screeningRun.input?.resumeFileIds?.length || 0,
+    },
+    ipAddress: auditContext.ipAddress || null,
+    userAgent: auditContext.userAgent || null,
   });
 
   return ScreeningRun.findById(screeningRun._id)

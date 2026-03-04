@@ -1,6 +1,7 @@
 import Candidate from "../models/candidate.model.js";
 import CandidateAction from "../models/candidate-action.model.js";
 import ScreeningResult from "../models/screening-result.model.js";
+import { logAuditEventService } from "./audit-log.service.js";
 import {
   buildServiceError,
   ensureCandidateLinkedToJob,
@@ -111,7 +112,7 @@ const applyCandidateSideEffects = async ({
   }
 };
 
-export const createCandidateActionService = async (payload, userId) => {
+export const createCandidateActionService = async (payload, userId, auditContext = {}) => {
   if (!userId) {
     throw buildServiceError("Unauthorized", 401, "UNAUTHORIZED");
   }
@@ -190,6 +191,26 @@ export const createCandidateActionService = async (payload, userId) => {
     actedBy: userId,
     note,
   });
+
+  if (actionType === "shortlisted" || actionType === "rejected") {
+    await logAuditEventService({
+      actorId: userId,
+      actorEmail: auditContext.actorEmail || null,
+      entityType: "CandidateAction",
+      entityId: action._id,
+      action: actionType,
+      module: "candidate_workflow",
+      severity: "info",
+      metadata: {
+        jobId,
+        candidateId,
+        sourceScreeningResultId: sourceScreeningResult?._id || null,
+        note,
+      },
+      ipAddress: auditContext.ipAddress || null,
+      userAgent: auditContext.userAgent || null,
+    });
+  }
 
   return CandidateAction.findById(action._id)
     .populate("candidateId", "fullName email currentTitle")
