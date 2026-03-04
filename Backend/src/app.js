@@ -14,12 +14,44 @@ import screeningRunRoutes from "./routes/screening-run.route.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler.middleware.js";
 import { success } from "./utils/response.js";
 
-const allowedOrigins = [
+const defaultAllowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5173",
-  "https://ai-resume-screener-seven.vercel.app/",
+  "https://ai-resume-screener-seven.vercel.app",
 ];
+
+const normalizeOrigin = (value) => {
+  return String(value || "").trim().replace(/\/+$/, "");
+};
+
+const configuredOrigins = String(process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean);
+
+const allowedOrigins = new Set(
+  [...defaultAllowedOrigins, ...configuredOrigins].map((origin) => normalizeOrigin(origin))
+);
+
+const allowVercelPreview = String(process.env.CORS_ALLOW_VERCEL_PREVIEW || "false") === "true";
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) {
+    return true;
+  }
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (allowedOrigins.has(normalizedOrigin)) {
+    return true;
+  }
+
+  if (allowVercelPreview && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(normalizedOrigin)) {
+    return true;
+  }
+
+  return false;
+};
 
 export const createApp = () => {
   const app = express();
@@ -27,7 +59,13 @@ export const createApp = () => {
   app.use(cookieParser());
   app.use(
     cors({
-      origin: allowedOrigins,
+      origin(origin, callback) {
+        if (isAllowedOrigin(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
       methods: ["POST", "GET", "PUT", "DELETE", "PATCH"],
       allowedHeaders: ["Content-Type", "Authorization"],
